@@ -19,13 +19,22 @@ No sudo needed.
 
 ## Install
 
+Paste this in a terminal. It downloads, installs and opens the app (no sudo needed):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yuxev/wallpaper-studio/main/get.sh | bash
+```
+
+Run the same line again to update. Later, open **Wallpaper Studio** from your apps (press Super and
+type *wallpaper*) or run `wallpaper-studio`.
+
+Or from a clone:
+
 ```sh
 git clone https://github.com/yuxev/wallpaper-studio.git
 cd wallpaper-studio
 ./install.sh
 ```
-
-Then open **Wallpaper Studio** from your apps (press Super and type *wallpaper*).
 
 ## How to use it
 
