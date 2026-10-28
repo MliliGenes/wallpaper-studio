@@ -10,11 +10,33 @@ ADW_GTK3=v6.5   # GTK 3 theme that lets older apps (Files, Terminal…) take the
 say() { printf '\033[1m%s\033[0m\n' "$*"; }
 
 # --- what the app needs -------------------------------------------------------------
-python3 - <<'PY' || { echo "Wallpaper Studio needs GTK 4 and libadwaita for Python (gir1.2-adw-1)." >&2; exit 1; }
+# A Python that can load GTK 4 and libadwaita. Ubuntu's own /usr/bin/python3 can; a python3 from
+# Homebrew, conda, pyenv or a virtualenv usually can't, even when it comes first in PATH.
+has_gtk() {
+	# the window (GTK 4) and the desktop helper (GDK 3 + cairo) run as separate processes: check each
+	"$1" - 2>/dev/null <<'PY' && "$1" - 2>/dev/null <<'PY2'
 import gi
 gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 PY
+import gi, cairo
+gi.require_version("Gdk", "3.0"); gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf
+PY2
+}
+PYTHON=
+tried=()
+for candidate in /usr/bin/python3 "$(command -v python3 || true)" /usr/local/bin/python3; do
+	[ -n "$candidate" ] && [ -x "$candidate" ] || continue
+	tried+=("$candidate")
+	if has_gtk "$candidate"; then PYTHON=$candidate; break; fi
+done
+if [ -z "$PYTHON" ]; then
+	echo "Wallpaper Studio needs a Python with GTK 4 and libadwaita, and none was found." >&2
+	echo "Tried: ${tried[*]:-no python3 at all}" >&2
+	echo "On Ubuntu these come from the packages python3-gi, python3-gi-cairo, gir1.2-gtk-4.0 and gir1.2-adw-1." >&2
+	exit 1
+fi
 if [ "${XDG_SESSION_TYPE:-x11}" != x11 ]; then
 	echo "Note: you're on $XDG_SESSION_TYPE; the wallpaper is only drawn in X11 (Xorg) sessions." >&2
 fi
@@ -28,7 +50,8 @@ fi
 
 # --- the app ------------------------------------------------------------------------
 say "Installing to $DEST"
-HELPER='^[^ ]*python3[^ ]* .*wallpaper[-_]studio desktop$'
+# stop this install's background helper (and one started by an older version) before replacing it
+HELPER="^[^ ]+ $DEST/wallpaper-studio desktop\$|^[^ ]*python3[^ ]* -m wallpaper_studio desktop\$"
 pkill -f "$HELPER" 2>/dev/null || true
 for _ in $(seq 50); do pgrep -f "$HELPER" >/dev/null || break; sleep 0.1; done   # let it let go first
 rm -rf "$DEST"
@@ -36,6 +59,8 @@ mkdir -p "$DEST" "$HOME/.local/bin" "$HOME/.local/share/applications" \
 	"$HOME/.local/share/icons/hicolor/scalable/apps" "$HOME/.config/autostart"
 cp -r wallpaper_studio wallpaper-studio wallpapers "$DEST/"
 find "$DEST" -name __pycache__ -prune -exec rm -rf {} +
+# always run with the Python that has GTK, whatever python3 comes first in PATH later
+sed -i "1s|^#!.*|#!$PYTHON|" "$DEST/wallpaper-studio"
 ln -sf "$DEST/wallpaper-studio" "$HOME/.local/bin/wallpaper-studio"
 cp data/$APP.svg "$HOME/.local/share/icons/hicolor/scalable/apps/$APP.svg"
 
@@ -80,4 +105,4 @@ gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || tr
 # start the helper now, so you don't have to log out
 (setsid "$DEST/wallpaper-studio" desktop >/dev/null 2>&1 &)
 
-say "Done. Open “Wallpaper Studio” from your apps, or run: wallpaper-studio"
+say "Done (using $PYTHON). Open “Wallpaper Studio” from your apps, or run: wallpaper-studio"

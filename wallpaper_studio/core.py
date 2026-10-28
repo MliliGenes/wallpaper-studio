@@ -152,8 +152,9 @@ def keep_awake(minutes):
 
 def start_helper():
     if not helper_running():
-        subprocess.Popen([sys.executable, "-m", "wallpaper_studio", "desktop"],
-                         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # by its full path, so install.sh can tell this install's helper from any other
+        subprocess.Popen([sys.executable, os.path.join(root, "wallpaper-studio"), "desktop"], cwd=root,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
 
