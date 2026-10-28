@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Runs Wallpaper Studio from wherever this file lives (the install folder or a checkout)."""
+import os
+import runpy
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+runpy.run_module("wallpaper_studio", run_name="__main__")
