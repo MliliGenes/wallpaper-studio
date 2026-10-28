@@ -1,0 +1,21 @@
+window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
+  background: transparent;
+  box-shadow: none;
+  border: none;
+}
+#ws-desktop-widgets .desktop-clock {
+  background-color: alpha(@ws_paper, 0.82);
+  color: @ws_ink;
+  border: 1px solid alpha(@ws_accent, 0.45);
+  border-radius: 18px;
+  padding: 14px 30px;
+}
+#ws-desktop-widgets .clock-time {
+  font-size: 52px;
+  font-weight: 600;
+  color: @ws_ink;
+}
+#ws-desktop-widgets .clock-date {
+  font-size: 14px;
+  color: @ws_muted;
+}

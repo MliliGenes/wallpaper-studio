@@ -1,5 +1,6 @@
 """The Wallpaper Studio window: pick a wallpaper, see its colours, choose light or dark."""
 import concurrent.futures
+import logging
 import os
 import threading
 
@@ -10,7 +11,7 @@ gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
-from . import core  # noqa: E402
+from . import core, styles  # noqa: E402
 
 APP_ID = "io.github.WallpaperStudio"
 THUMB_W, THUMB_H = 480, 270          # pixels on disk; shown at half size, sharp on HiDPI screens
@@ -19,17 +20,6 @@ ROTATIONS = [(0, "Never"), (1, "Every hour"), (3, "Every 3 hours"), (5, "Every 5
 SWATCHES = ["paper", "sheet", "ink", "muted", "accent"]
 AWAKE_CHOICES = [(None, "Off"), (30, "For 30 minutes"), (60, "For 1 hour"), (120, "For 2 hours"),
                  (core.FOREVER, "Until I turn it off")]
-
-CSS = b"""
-.thumb { padding: 0; border-radius: 10px; }
-.thumb picture { border-radius: 8px; }
-.thumb.current { outline: 3px solid @accent_bg_color; outline-offset: 2px; }
-.hero { border-radius: 12px; }
-.swatch { border-radius: 6px; min-width: 26px; min-height: 26px; }
-.badge { background: rgba(0, 0, 0, 0.6); color: white; border-radius: 6px; padding: 1px 6px;
-         font-size: 0.8em; font-weight: bold; margin: 6px; }
-"""
-
 
 def cover(path, width, height):
     """The picture scaled to fill width × height, centre-cropped."""
@@ -81,6 +71,9 @@ class Window(Adw.ApplicationWindow):
         self.thumbs = {}            # path -> button in the grid
         self.busy = False
         self.showing_awake = False
+        self.syncing_config = False
+        self.mode_buttons = {}
+        self.switches = {}
         self.config = core.load_config()
 
         self.toasts = Adw.ToastOverlay()
@@ -105,8 +98,9 @@ class Window(Adw.ApplicationWindow):
 
         # the helper may change the wallpaper on its own (rotation); follow along
         os.makedirs(core.CONFIG_DIR, exist_ok=True)
-        self.monitor = Gio.File.new_for_path(core.STATE).monitor_file(Gio.FileMonitorFlags.NONE, None)
-        self.monitor.connect("changed", lambda *_: GLib.timeout_add(300, self.show_current))
+        self.refresh_timer = 0
+        self.monitor = Gio.File.new_for_path(core.CONFIG_DIR).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        self.monitor.connect("changed", self.on_file_change)
         self.show_current()
         self.load_library()
         self.set_focus(self.first_focus)     # otherwise focus lands in the grid and scrolls the top away
@@ -181,11 +175,13 @@ class Window(Adw.ApplicationWindow):
         mode_row = Adw.ActionRow(title="Light or dark",
                                  subtitle=f"Auto is light from {self.config['light_from']:02d}:00 "
                                           f"and dark from {self.config['dark_from']:02d}:00")
+        self.mode_row = mode_row
         modes = Gtk.Box(css_classes=["linked"], valign=Gtk.Align.CENTER)
         first = None
         for mode, label in (("light", "Light"), ("dark", "Dark"), ("auto", "Auto")):
             button = Gtk.ToggleButton(label=label, group=first, active=self.config["mode"] == mode)
             button.connect("toggled", self.on_mode, mode)
+            self.mode_buttons[mode] = button
             first = first or button
             modes.append(button)
         mode_row.add_suffix(modes)
@@ -196,12 +192,17 @@ class Window(Adw.ApplicationWindow):
         look.add(self.switch_row("Lock screen", "Show the wallpaper when the screen is locked", "lock_screen"))
         box.append(look)
 
+        widgets = Adw.PreferencesGroup(title="Desktop widgets",
+                                       description="Style the clock in ~/.config/wallpaper-studio/widgets.css")
+        widgets.add(self.switch_row("Desktop clock", "Show time and date at the top centre of the desktop", "clock"))
+        box.append(widgets)
+
         auto = Adw.PreferencesGroup(title="Change automatically",
                                     description="Picks a random wallpaper from your folder.")
-        combo = Adw.ComboRow(title="New wallpaper", model=Gtk.StringList.new([label for _h, label in ROTATIONS]))
-        hours = [h for h, _l in ROTATIONS]
-        combo.set_selected(hours.index(self.config["rotate_hours"]) if self.config["rotate_hours"] in hours else 0)
-        combo.connect("notify::selected", lambda c, _p: self.save(rotate_hours=hours[c.get_selected()]))
+        combo = Adw.ComboRow(title="New wallpaper")
+        self.rotation_combo = combo
+        self.update_rotation()
+        combo.connect("notify::selected", self.on_rotation)
         auto.add(combo)
         box.append(auto)
 
@@ -210,6 +211,12 @@ class Window(Adw.ApplicationWindow):
                                       model=Gtk.StringList.new([label for _m, label in AWAKE_CHOICES]))
         self.awake_row.connect("notify::selected", self.on_awake)
         screen.add(self.awake_row)
+        method = Adw.ComboRow(title="Keep-awake method", model=Gtk.StringList.new(["GNOME + periodic F15 key", "GNOME inhibitor only"]),
+                             subtitle="Key events run only while Keep screen awake is on")
+        method.set_selected(0 if self.config["awake_method"] == "key" else 1)
+        method.connect("notify::selected", lambda c, _p: self.save(awake_method="key" if c.get_selected() == 0 else "inhibit"))
+        self.awake_method_combo = method
+        screen.add(method)
         box.append(screen)
         self.show_awake()
         GLib.timeout_add_seconds(30, self.show_awake)     # count down, and notice when it runs out
@@ -220,6 +227,19 @@ class Window(Adw.ApplicationWindow):
             return
         core.keep_awake(AWAKE_CHOICES[row.get_selected()][0])
         self.show_awake()
+
+    def update_rotation(self):
+        choices = list(ROTATIONS)
+        hours = self.config["rotate_hours"]
+        if hours not in [h for h, _label in choices]:
+            choices.append((hours, f"Every {hours:g} hours"))
+        self.rotation_hours = [h for h, _label in choices]
+        self.rotation_combo.set_model(Gtk.StringList.new([label for _h, label in choices]))
+        self.rotation_combo.set_selected(self.rotation_hours.index(hours))
+
+    def on_rotation(self, row, _param):
+        if not self.syncing_config and row.get_selected() < len(self.rotation_hours):
+            self.save(rotate_hours=self.rotation_hours[row.get_selected()])
 
     def show_awake(self):
         """Show whether "keep awake" is on and until when; it ends at logout either way."""
@@ -245,11 +265,40 @@ class Window(Adw.ApplicationWindow):
         row = Adw.ActionRow(title=title, subtitle=subtitle)
         switch = Gtk.Switch(active=self.config[key], valign=Gtk.Align.CENTER)
         switch.connect("notify::active", lambda s, _p: self.save(recolour=True, **{key: s.get_active()}))
+        self.switches[key] = switch
         row.add_suffix(switch)
         row.set_activatable_widget(switch)
         return row
 
     # --- showing state -------------------------------------------------------------------
+
+    def on_file_change(self, _monitor, file, _other, _event):
+        if file.get_basename() not in ("state.json", "config.json"):
+            return
+        if self.refresh_timer:
+            GLib.source_remove(self.refresh_timer)
+        self.refresh_timer = GLib.timeout_add(300, self.sync_from_disk)
+
+    def sync_from_disk(self):
+        self.refresh_timer = 0
+        previous = self.config
+        self.config = core.load_config()
+        self.syncing_config = True
+        try:
+            for mode, button in self.mode_buttons.items():
+                button.set_active(self.config["mode"] == mode)
+            for key, switch in self.switches.items():
+                switch.set_active(self.config[key])
+            self.update_rotation()
+            self.awake_method_combo.set_selected(0 if self.config["awake_method"] == "key" else 1)
+            self.mode_row.set_subtitle(f"Auto is light from {self.config['light_from']:02d}:00 "
+                                       f"and dark from {self.config['dark_from']:02d}:00")
+        finally:
+            self.syncing_config = False
+        if previous["folder"] != self.config["folder"]:
+            self.load_library()
+        self.show_current()
+        return False
 
     def show_current(self):
         state = core.load_state()
@@ -361,6 +410,8 @@ class Window(Adw.ApplicationWindow):
             self.run(lambda: core.set_wallpaper(path) or True)
 
     def save(self, recolour=False, **changes):
+        if self.syncing_config:
+            return
         self.config = core.save_config(**changes)
         if recolour:
             self.run(lambda: core.apply_theme() or True)
@@ -431,8 +482,9 @@ class App(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        styles.ensure_user_styles()
         provider = Gtk.CssProvider()
-        provider.load_from_data(CSS)
+        provider.load_from_path(str(styles.DIRECTORY / "app.css"))
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         # GTK reads gtk.css only at start-up; reload it (and the colours it imports) whenever they change,
@@ -440,16 +492,38 @@ class App(Adw.Application):
         self.user_css = Gtk.CssProvider()
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), self.user_css,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
-        self.css_monitor = Gio.File.new_for_path(core.THEME_CSS).monitor_file(Gio.FileMonitorFlags.NONE, None)
-        self.css_monitor.connect("changed", lambda *_: GLib.timeout_add(150, self.reload_user_css))
+        self.custom_css = None
+        self.css_timer = 0
+        self.css_monitor = Gio.File.new_for_path(core.CONFIG_DIR).monitor_directory(Gio.FileMonitorFlags.NONE, None)
+        self.css_monitor.connect("changed", self.on_css_change)
         self.reload_user_css()
         core.start_helper()
 
     def reload_user_css(self):
+        self.css_timer = 0
         gtk_css = os.path.join(core.HOME, ".config", "gtk-4.0", "gtk.css")
-        if os.path.exists(gtk_css):
-            self.user_css.load_from_path(gtk_css)
+        try:
+            self.user_css.load_from_data(b"")
+            if os.path.exists(gtk_css):
+                self.user_css.load_from_path(gtk_css)
+            provider = Gtk.CssProvider()
+            if os.path.exists(core.APP_CSS):
+                provider.load_from_path(core.APP_CSS)
+            display = Gdk.Display.get_default()
+            Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER + 2)
+            if self.custom_css:
+                Gtk.StyleContext.remove_provider_for_display(display, self.custom_css)
+            self.custom_css = provider
+        except GLib.Error as error:
+            logging.getLogger(__name__).warning("Cannot reload app CSS: %s", error)
         return False
+
+    def on_css_change(self, _monitor, file, _other, _event):
+        if file.get_basename() not in ("theme.css", "app.css"):
+            return
+        if self.css_timer:
+            GLib.source_remove(self.css_timer)
+        self.css_timer = GLib.timeout_add(150, self.reload_user_css)
 
     def do_activate(self):
         (self.get_active_window() or Window(self)).present()

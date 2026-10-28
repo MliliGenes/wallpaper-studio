@@ -3,6 +3,14 @@
 set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")"
 
+START_HELPER=true
+case "${1:-}" in
+	--no-start) START_HELPER=false ;;
+	-h|--help) echo "Usage: ./install.sh [--no-start]"; exit 0 ;;
+	"") ;;
+	*) echo "Usage: ./install.sh [--no-start]" >&2; exit 1 ;;
+esac
+
 APP=io.github.WallpaperStudio
 DEST="$HOME/.local/share/wallpaper-studio"
 ADW_GTK3=v6.5   # GTK 3 theme that lets older apps (Files, Terminal…) take the new colours
@@ -20,8 +28,8 @@ gi.require_version("Gtk", "4.0"); gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw
 PY
 import gi, cairo
-gi.require_version("Gdk", "3.0"); gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gdk, GdkPixbuf
+gi.require_version("Gtk", "3.0"); gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gtk, GdkPixbuf
 PY2
 }
 PYTHON=
@@ -34,7 +42,7 @@ done
 if [ -z "$PYTHON" ]; then
 	echo "Wallpaper Studio needs a Python with GTK 4 and libadwaita, and none was found." >&2
 	echo "Tried: ${tried[*]:-no python3 at all}" >&2
-	echo "On Ubuntu these come from the packages python3-gi, python3-gi-cairo, gir1.2-gtk-4.0 and gir1.2-adw-1." >&2
+	echo "On Ubuntu: python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gtk-4.0 and gir1.2-adw-1." >&2
 	exit 1
 fi
 if [ "${XDG_SESSION_TYPE:-x11}" != x11 ]; then
@@ -62,6 +70,13 @@ find "$DEST" -name __pycache__ -prune -exec rm -rf {} +
 # always run with the Python that has GTK, whatever python3 comes first in PATH later
 sed -i "1s|^#!.*|#!$PYTHON|" "$DEST/wallpaper-studio"
 ln -sf "$DEST/wallpaper-studio" "$HOME/.local/bin/wallpaper-studio"
+# A real executable shortcut works in Bash, Zsh and scripts without sourcing shell config.
+if [ ! -e "$HOME/.local/bin/ws" ] && [ ! -L "$HOME/.local/bin/ws" ] || \
+	[ "$(readlink "$HOME/.local/bin/ws" 2>/dev/null || true)" = "$DEST/wallpaper-studio" ]; then
+	ln -sf "$DEST/wallpaper-studio" "$HOME/.local/bin/ws"
+else
+	echo "Leaving your existing ~/.local/bin/ws in place; use wallpaper-studio."
+fi
 cp data/$APP.svg "$HOME/.local/share/icons/hicolor/scalable/apps/$APP.svg"
 
 cat >"$HOME/.local/share/applications/$APP.desktop" <<DESKTOP
@@ -102,7 +117,20 @@ fi
 update-desktop-database -q "$HOME/.local/share/applications" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 
-# start the helper now, so you don't have to log out
-(setsid "$DEST/wallpaper-studio" desktop >/dev/null 2>&1 &)
+# seed editable CSS files without overwriting existing customisations
+"$PYTHON" -c "import sys; sys.path.insert(0, sys.argv[1]); from wallpaper_studio.styles import ensure_user_styles; ensure_user_styles()" "$DEST"
+
+# start the helper now, so you don't have to log out; retain diagnostics
+if $START_HELPER; then
+	LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-studio"
+	mkdir -p "$LOG_DIR"
+	(setsid "$DEST/wallpaper-studio" desktop >>"$LOG_DIR/helper.log" 2>&1 &)
+fi
 
 say "Done (using $PYTHON). Open “Wallpaper Studio” from your apps, or run: wallpaper-studio"
+echo "Terminal settings: wallpaper-studio config list (or ws config list)."
+echo "Optional Bash/Zsh aliases: eval \"\$(wallpaper-studio shell-init)\""
+case ":$PATH:" in
+	*:"$HOME/.local/bin":*) ;;
+	*) echo 'Add ~/.local/bin to PATH in your shell startup file: export PATH="$HOME/.local/bin:$PATH"' ;;
+esac

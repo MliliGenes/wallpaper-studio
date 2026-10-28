@@ -22,36 +22,16 @@ from gi.repository import Gio, GLib
 
 from . import palette
 
-HOME = os.path.expanduser("~")
-CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config")), "wallpaper-studio")
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "wallpaper-studio")
-CONFIG = os.path.join(CONFIG_DIR, "config.json")
-STATE = os.path.join(CONFIG_DIR, "state.json")
-ORIGINALS = os.path.join(CONFIG_DIR, "originals.json")
-THEME_CSS = os.path.join(CONFIG_DIR, "theme.css")
-HOOKS = os.path.join(CONFIG_DIR, "hooks")
-LOCK = os.path.join(CONFIG_DIR, ".lock")
-HELPER_LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio.lock")
-# lives in the session's runtime folder, which is emptied at logout: "keep awake" never outlives a session
-AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-awake.json")
-FOREVER = -1
+# Re-export the existing core API while preferences and storage stay usable without GTK.
+from .storage import (HOME, CONFIG_DIR, CACHE_DIR, CONFIG, STATE, ORIGINALS, THEME_CSS,
+                      APP_CSS, WIDGETS_CSS, HOOKS, LOCK, HELPER_LOCK, AWAKE, BUILT_IN,
+                      read_json as _read_json, write as _write, locked)
+from .settings import DEFAULT_CONFIG, load_config, save_config, is_light_hour
 
-# wallpapers that come with the app, shown until you pick a folder of your own
-BUILT_IN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wallpapers")
+FOREVER = -1
 
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".bmp", ".tif", ".tiff", ".gif")
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi")
-
-DEFAULT_CONFIG = {
-    "mode": "auto",                 # light | dark | auto (follows the clock)
-    "light_from": 7,                # auto mode: light from 07:00 ...
-    "dark_from": 19,                # ... dark from 19:00
-    "folder": BUILT_IN,
-    "rotate_hours": 0,              # 0 = never change by itself
-    "glass": False,                 # see-through windows
-    "terminal": True,               # recolour GNOME Terminal
-    "lock_screen": True,            # use the wallpaper on the lock screen
-}
 
 # settings we touch, saved once before the first change so Restore can put them back
 TOUCHED = [
@@ -74,47 +54,12 @@ def is_wallpaper(path):
 
 # --- files ------------------------------------------------------------------------
 
-def _read_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return default
-
-
-def _write(path, text):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
-    with os.fdopen(fd, "w") as f:
-        f.write(text)
-    os.replace(tmp, path)
-
-
-def load_config():
-    return {**DEFAULT_CONFIG, **_read_json(CONFIG, {})}
-
-
-def save_config(**changes):
-    config = {**load_config(), **changes}
-    _write(CONFIG, json.dumps(config, indent=2) + "\n")
-    return config
-
-
 def load_state():
     return _read_json(STATE, {})
 
 
 def _save_state(state):
     _write(STATE, json.dumps(state, indent=2) + "\n")
-
-
-@contextlib.contextmanager
-def locked():
-    """One change at a time: the window, the timer and the command line can overlap."""
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(LOCK, "w") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        yield
 
 
 def helper_running():
@@ -144,7 +89,9 @@ def awake_minutes():
 def keep_awake(minutes):
     """Stop the screen locking from idleness for this many minutes (FOREVER: until turned off, None: off now).
 
-    The desktop helper holds GNOME's own idle inhibitor, as video players do; it ends at logout."""
+    The helper holds GNOME's inhibitor and optionally sends XTEST F15 taps; it ends at logout."""
+    if minutes is not None and (type(minutes) is not int or (minutes <= 0 and minutes != FOREVER)):
+        raise ValueError("keep-awake duration must be a positive number of minutes")
     until = None if minutes is None else FOREVER if minutes == FOREVER else time.time() + minutes * 60
     _write(AWAKE, json.dumps({"until": until, "minutes": minutes}) + "\n")
     start_helper()
@@ -154,9 +101,10 @@ def start_helper():
     if not helper_running():
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         # by its full path, so install.sh can tell this install's helper from any other
-        subprocess.Popen([sys.executable, os.path.join(root, "wallpaper-studio"), "desktop"], cwd=root,
-                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(os.path.join(CACHE_DIR, "helper.log"), "a") as log:
+            subprocess.Popen([sys.executable, os.path.join(root, "wallpaper-studio"), "desktop"], cwd=root,
+                             stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True)
 
 
 # --- settings ---------------------------------------------------------------------
@@ -274,7 +222,7 @@ def effective_mode(config=None):
     config = config or load_config()
     if config["mode"] in ("light", "dark"):
         return config["mode"]
-    return "light" if config["light_from"] <= time.localtime().tm_hour < config["dark_from"] else "dark"
+    return "light" if is_light_hour(time.localtime().tm_hour, config["light_from"], config["dark_from"]) else "dark"
 
 
 THEMES_DIR = os.path.join(HOME, ".local/share/themes")
@@ -437,6 +385,8 @@ def _run_hooks(p, mode):
 
 def restore():
     """Put back every setting as it was before Wallpaper Studio, and take the wallpaper away."""
+    save_config(clock=False)
+    _write(AWAKE, json.dumps({"until": None, "minutes": None}) + "\n")
     with locked():
         saved = _read_json(ORIGINALS, None)
         if saved:

@@ -13,6 +13,7 @@ import ctypes
 import ctypes.util
 import fcntl
 import gc
+import logging
 import math
 import os
 import signal
@@ -25,10 +26,13 @@ import cairo
 import gi
 
 gi.require_version("Gdk", "3.0")
+gi.require_version("Gtk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gdk, GdkPixbuf, Gio, GLib  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import core  # noqa: E402
+from .awake import KeyTap  # noqa: E402
+from .widgets import DesktopWidgets  # noqa: E402
 
 VLC_SOCKET = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-vlc.sock")
 
@@ -164,12 +168,18 @@ class Desktop:
         self.busy = None             # a rotation or light/dark change running in the background
         self.inhibit_cookie = None   # held while "keep screen awake" is on
         self.awake_timer = 0
+        self.pulse_timer = 0
+        self.key_tap = None
+        self.awake_signature = None
+        self.warned_session = False
         try:
             self.session = Gio.DBusProxy.new_for_bus_sync(
                 Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None, "org.freedesktop.login1",
                 "/org/freedesktop/login1/session/auto", "org.freedesktop.login1.Session", None)
         except GLib.Error:
             self.session = None
+
+        self.widgets = DesktopWidgets(self.session_locked)
 
         os.makedirs(core.CONFIG_DIR, exist_ok=True)
         self.monitor = Gio.File.new_for_path(core.CONFIG_DIR).monitor_directory(Gio.FileMonitorFlags.NONE, None)
@@ -208,28 +218,67 @@ class Desktop:
         return False
 
     def on_change(self, _monitor, file, _other, _event):
-        if file.get_basename() != "state.json":
+        if file.get_basename() not in ("state.json", "config.json", "theme.css", "widgets.css"):
             return
         # a change arrives as several file events; act once they settle
         if self.pending:
             GLib.source_remove(self.pending)
-        self.pending = GLib.timeout_add(300, self.refresh)
+        self.pending = GLib.timeout_add(300, self.sync)
+
+    def sync(self):
+        self.pending = 0
+        self.widgets.reload()
+        self.sync_awake()
+        self.refresh()
+        self.tick()
+        return False
 
     # --- keep screen awake -----------------------------------------------------------------
 
     def sync_awake(self):
         """Hold GNOME's idle inhibitor exactly while "keep screen awake" is on; release it when it ends."""
+        until = core.awake_until()
+        config = core.load_config()
+        signature = (until, config["awake_method"], config["awake_interval"])
+        if signature == self.awake_signature:
+            return False
+        self.awake_signature = signature
         if self.awake_timer:
             GLib.source_remove(self.awake_timer)
             self.awake_timer = 0
-        until = core.awake_until()
+        if self.pulse_timer:
+            GLib.source_remove(self.pulse_timer)
+            self.pulse_timer = 0
         if until is None:
             self.uninhibit()
             return False
         self.inhibit()
+        if config["awake_method"] == "key":
+            if self.key_tap is None:
+                self.key_tap = KeyTap(self.dpy)
+            if self.key_tap.available:
+                if (self.session is None or self.session.get_cached_property("Active") is None
+                        or self.session.get_cached_property("LockedHint") is None) and not self.warned_session:
+                    logging.getLogger(__name__).warning("Cannot confirm session lock state; key taps disabled until logind reports it")
+                    self.warned_session = True
+                self.pulse_timer = GLib.timeout_add_seconds(config["awake_interval"], self.pulse_awake)
+                self.pulse_awake()
         if until != core.FOREVER:
             self.awake_timer = GLib.timeout_add_seconds(max(1, int(until - time.time()) + 1), self.sync_awake)
         return False
+
+    def pulse_awake(self):
+        if core.awake_until() is None:
+            self.pulse_timer = 0
+            return False
+        # Require a known active, unlocked session before sending input.
+        # Logind's Active flag alone does not mean the screen is unlocked.
+        if self.session is not None:
+            active = self.session.get_cached_property("Active")
+            locked = self.session.get_cached_property("LockedHint")
+            if active is not None and active.unpack() and locked is not None and not locked.unpack():
+                self.key_tap.pulse()
+        return True
 
     def session_manager(self):
         return Gio.DBusProxy.new_for_bus_sync(
@@ -246,7 +295,8 @@ class Desktop:
                 "Inhibit", GLib.Variant("(susu)", ("io.github.WallpaperStudio", 0, "Keeping the screen awake", 8)),
                 Gio.DBusCallFlags.NONE, -1, None)
             self.inhibit_cookie = reply.unpack()[0]
-        except GLib.Error:
+        except GLib.Error as error:
+            logging.getLogger(__name__).warning("GNOME idle inhibition failed: %s", error)
             self.inhibit_cookie = None
 
     def uninhibit(self):
@@ -451,7 +501,13 @@ class Desktop:
         if not self.session:
             return False
         active = self.session.get_cached_property("Active")
-        return active is not None and not active.unpack()
+        locked = self.session.get_cached_property("LockedHint")
+        return bool((active is not None and not active.unpack()) or (locked is not None and locked.unpack()))
+
+    def close(self):
+        self.stop_video()
+        self.uninhibit()
+        self.widgets.close()
 
     def window_atoms(self, window, prop):
         actual, fmt = XID(), ctypes.c_int()
@@ -479,6 +535,9 @@ class Desktop:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if not Gtk.init_check()[0]:
+        raise SystemExit("wallpaper-studio: no GTK X11 display")
     lock = open(core.HELPER_LOCK, "a")
     for _ in range(50):   # a helper that is just shutting down (an update) may still hold it briefly
         try:
@@ -489,6 +548,11 @@ def main():
     else:
         return 0          # another helper is running
     desktop = Desktop()
-    signal.signal(signal.SIGTERM, lambda *_: (desktop.stop_video(), os._exit(0)))
-    GLib.MainLoop().run()
+    loop = GLib.MainLoop()
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, lambda: (loop.quit(), False)[1])
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, lambda: (loop.quit(), False)[1])
+    try:
+        loop.run()
+    finally:
+        desktop.close()
     return 0
