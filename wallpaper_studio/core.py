@@ -36,6 +36,9 @@ HELPER_LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-awake.json")
 FOREVER = -1
 
+# wallpapers that come with the app, shown until you pick a folder of your own
+BUILT_IN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wallpapers")
+
 IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".bmp", ".tif", ".tiff", ".gif")
 VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi")
 
@@ -43,7 +46,7 @@ DEFAULT_CONFIG = {
     "mode": "auto",                 # light | dark | auto (follows the clock)
     "light_from": 7,                # auto mode: light from 07:00 ...
     "dark_from": 19,                # ... dark from 19:00
-    "folder": os.path.join(HOME, "Pictures"),
+    "folder": BUILT_IN,
     "rotate_hours": 0,              # 0 = never change by itself
     "glass": False,                 # see-through windows
     "terminal": True,               # recolour GNOME Terminal

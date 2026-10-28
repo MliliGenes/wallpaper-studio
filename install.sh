@@ -34,7 +34,7 @@ for _ in $(seq 50); do pgrep -f "$HELPER" >/dev/null || break; sleep 0.1; done  
 rm -rf "$DEST"
 mkdir -p "$DEST" "$HOME/.local/bin" "$HOME/.local/share/applications" \
 	"$HOME/.local/share/icons/hicolor/scalable/apps" "$HOME/.config/autostart"
-cp -r wallpaper_studio wallpaper-studio "$DEST/"
+cp -r wallpaper_studio wallpaper-studio wallpapers "$DEST/"
 find "$DEST" -name __pycache__ -prune -exec rm -rf {} +
 ln -sf "$DEST/wallpaper-studio" "$HOME/.local/bin/wallpaper-studio"
 cp data/$APP.svg "$HOME/.local/share/icons/hicolor/scalable/apps/$APP.svg"

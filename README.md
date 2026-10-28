@@ -31,7 +31,8 @@ Then open **Wallpaper Studio** from your apps (press Super and type *wallpaper*)
 
 <img src="docs/window.png" alt="The Wallpaper Studio window" width="560">
 
-1. **Pick a folder.** *Change folder…* points the app at your pictures and videos (`~/Pictures` by default).
+1. **Pick a folder.** The app comes with a few wallpapers (including a looping video) to start with;
+   *Change folder…* points it at your own pictures and videos instead.
 2. **Click a wallpaper.** The desktop changes and every open app takes its colours within a second.
    You can also drop a picture onto the window, or use *Open a file…*.
 3. **Choose light, dark or auto** under *Colours*. Auto is light from 07:00 and dark from 19:00.

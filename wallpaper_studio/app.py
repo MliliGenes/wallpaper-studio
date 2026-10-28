@@ -296,7 +296,8 @@ class Window(Adw.ApplicationWindow):
     def load_library(self):
         self.config = core.load_config()
         folder = self.config["folder"]
-        self.library_group.set_description(folder.replace(core.HOME, "~", 1))
+        self.library_group.set_description("Built-in wallpapers" if folder == core.BUILT_IN
+                                           else folder.replace(core.HOME, "~", 1))
         while child := self.grid.get_first_child():
             self.grid.remove(child)
         self.thumbs.clear()
