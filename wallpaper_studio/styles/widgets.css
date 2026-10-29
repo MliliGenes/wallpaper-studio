@@ -27,7 +27,7 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
   box-shadow: none;
 }
 #ws-desktop-widgets.layout-edit .desktop-widget {
-  border: 2px dashed @ws_accent;
+  border: 1px dashed @ws_accent;
 }
 #ws-desktop-widgets .desktop-clock {
   background: transparent;
@@ -112,7 +112,7 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
 #ws-desktop-widgets .logtime-unit { color: @ws_accent_text; font-size: 1.1em; }
 #ws-desktop-widgets .logtime-period { color: @ws_ink; font-size: 0.8em; }
 #ws-desktop-widgets .logtime-status { color: @ws_muted; font-size: 0.8em; }
-#ws-desktop-widgets .logtime-card button {
+#ws-desktop-widgets .logtime-card button, #ws-desktop-widgets .media-card button {
   background-color: alpha(@ws_accent, 0.12);
   background-image: none;
   color: @ws_ink;
@@ -123,6 +123,18 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
   box-shadow: inset 0 1px 0 alpha(@ws_ink, 0.08);
   text-shadow: none;
 }
-#ws-desktop-widgets .logtime-card button:hover { background-color: alpha(@ws_accent, 0.28); }
-#ws-desktop-widgets .logtime-card button:active { background-color: alpha(@ws_accent, 0.42); }
-#ws-desktop-widgets .logtime-card button:disabled { color: @ws_muted; }
+#ws-desktop-widgets .logtime-card button:hover, #ws-desktop-widgets .media-card button:hover { background-color: alpha(@ws_accent, 0.28); }
+#ws-desktop-widgets .logtime-card button:active, #ws-desktop-widgets .media-card button:active { background-color: alpha(@ws_accent, 0.42); }
+#ws-desktop-widgets .logtime-card button:disabled, #ws-desktop-widgets .media-card button:disabled { color: @ws_muted; }
+
+#ws-desktop-widgets .media-card { min-width: 19em; }
+#ws-desktop-widgets .media-title { font-size: 1.35em; font-weight: bold; }
+#ws-desktop-widgets .media-detail { color: @ws_muted; font-size: 0.85em; }
+
+/* Artwork and compact, accessible transport controls. */
+#ws-desktop-widgets .widget-image { min-width: 10em; min-height: 10em; }
+#ws-desktop-widgets .media-card button.media-control {
+  font-size: 1.3em;
+  padding: 0.3em 0.65em;
+  min-width: 1.5em;
+}

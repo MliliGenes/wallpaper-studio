@@ -25,11 +25,50 @@ class LayoutTests(unittest.TestCase):
 
     def test_default_layout_and_offsets(self):
         entries = layout.load_layout()
-        self.assertEqual([item.component for item in entries], ["Clock", "Calendar", "System", "Notes", "Logtime"])
+        self.assertEqual([item.component for item in entries], ["Clock", "Calendar", "System", "Cleaner", "Notes", "NowPlaying", "Logtime"])
         self.assertEqual(layout.coordinates(entries[0], 1000, 800, 200, 100, 48), (400, 48))
         self.assertEqual(layout.coordinates(entries[1], 1000, 800, 200, 100), (768, 32))
-        self.assertEqual(layout.coordinates(entries[3], 1000, 800, 200, 100), (768, 668))
-        self.assertEqual(layout.coordinates(entries[4], 1000, 800, 200, 100), (32, 668))
+        self.assertEqual(layout.coordinates(entries[4], 1000, 800, 200, 100), (768, 668))
+        self.assertEqual(layout.coordinates(entries[6], 1000, 800, 200, 100), (32, 668))
+
+    def test_now_playing_preserves_custom_placements_when_added(self):
+        default = json.loads(layout.DEFAULT_FILE.read_text())
+        previous = {**default, "widgets": [entry for entry in default["widgets"]
+                                           if entry["component"] != "NowPlaying"]}
+        Path(storage.LAYOUT).write_text(json.dumps(previous))
+        layout.ensure_layout()
+        self.assertEqual(json.loads(Path(storage.LAYOUT).read_text()), default)
+        previous["widgets"][0]["x"] = 123
+        Path(storage.LAYOUT).write_text(json.dumps(previous))
+        layout.ensure_layout()
+        upgraded = json.loads(Path(storage.LAYOUT).read_text())
+        self.assertEqual(upgraded["widgets"][:-1], previous["widgets"])
+        self.assertEqual(upgraded["widgets"][-1]["component"], "NowPlaying")
+        layout.set_enabled("now-playing", False)
+        layout.ensure_layout()
+        self.assertFalse(layout.load_layout()[-1].enabled)
+        self.assertEqual(layout.widget_title(layout.load_layout()[-1]), "Now playing")
+
+    def test_grid_footprints_gutters_and_screen_edges(self):
+        width = layout.grid_extent(201, 32, 8)
+        self.assertEqual(width, 232)
+        self.assertEqual(layout.grid_extent(width, 32, 8), width)
+        left = layout.grid_coordinate(8, width, 1000, 32, 8)
+        adjacent = layout.grid_coordinate(left + width + 8, width, 1000, 32, 8)
+        self.assertEqual(adjacent - left - width, 8)
+        self.assertEqual(layout.grid_coordinate(-500, width, 1000, 32, 8), 8)
+        right = layout.grid_coordinate(2000, width, 1000, 32, 8)
+        self.assertLessEqual(right + width + 8, 1000)
+        self.assertEqual((right - 8) % 40, 0)
+        self.assertEqual(layout.grid_coordinate(100, 2000, 1000, 32, 8), 0)
+        self.assertEqual(layout.grid_extent(64, 32, 0), 64)
+
+    def test_grid_resize_snaps_both_directions_and_clamps_scale(self):
+        self.assertEqual(layout.grid_scale(1, 232, 152, 5, 0, 32, 8), 1)
+        self.assertAlmostEqual(layout.grid_scale(1, 232, 152, 40, 0, 32, 8), 272 / 232)
+        self.assertAlmostEqual(layout.grid_scale(1, 232, 152, 0, -40, 32, 8), 112 / 152)
+        self.assertEqual(layout.grid_scale(1, 232, 152, 10000, 0, 32, 8), 2.5)
+        self.assertEqual(layout.grid_scale(1, 232, 152, -10000, 0, 32, 8), .5)
 
     def test_bad_layouts_reject_duplicate_ids_scales_and_unsafe_names(self):
         for entries in ([{"id": "x", "component": "Clock", "scale": 0}],

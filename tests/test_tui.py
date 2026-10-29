@@ -21,6 +21,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TerminalBackendTests(unittest.TestCase):
+    def test_widgets_panel_includes_now_playing_and_arrange_controls(self):
+        from wallpaper_studio import layout, settings
+        from wallpaper_studio.tui import Panel
+        panel = Panel.__new__(Panel)
+        panel.page = 2
+        panel.config = settings.DEFAULT_CONFIG.copy()
+        panel.placements = layout.load_layout(layout.DEFAULT_FILE)
+        rows = panel.items()
+        media = next(row for row in rows if row.command == ("layout", "toggle", "now-playing"))
+        self.assertEqual(media.label, "Now playing")
+        self.assertEqual(media.value, "On")
+        self.assertTrue(any(row.setting == "layout_edit" for row in rows))
+        for key in ("layout_grid", "layout_grid_size", "layout_grid_gap"):
+            self.assertTrue(any(row.setting == key for row in rows))
+
     def test_expired_awake_requests_display_off(self):
         self.assertEqual(awake_status({}, now=100), "Off")
         self.assertEqual(awake_status({"until": 99}, now=100), "Off")

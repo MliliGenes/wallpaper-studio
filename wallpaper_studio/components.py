@@ -112,12 +112,21 @@ def Progress(value=0, *, text=None, class_name="", visible=True, expand=False, a
     return Element("progress", props, key=key)
 
 
-def Button(text, *, on_click, sensitive=True, class_name="", visible=True, expand=False, align="fill", key=None):
+def Button(text, *, on_click, sensitive=True, tooltip="", class_name="", visible=True, expand=False, align="fill", key=None):
     if not callable(on_click) or type(sensitive) is not bool:
         raise TypeError("Button needs an on_click callback and boolean sensitive")
     props = _props(class_name, visible, expand, align)
-    props.update(text=str(text), on_click=on_click, sensitive=sensitive)
+    props.update(text=str(text), on_click=on_click, sensitive=sensitive, tooltip=str(tooltip))
     return Element("button", props, key=key)
+
+
+def Image(data=None, *, class_name="", visible=True, expand=False, align="center", key=None):
+    """Encoded image bytes; loading belongs in a scoped background model."""
+    if data is not None and not isinstance(data, bytes):
+        raise TypeError("Image data must be bytes or None")
+    props = _props(class_name, visible, expand, align)
+    props["data"] = data
+    return Element("image", props, key=key)
 
 
 def Ring(value, *children, class_name="", visible=True, expand=False, align="center", key=None):
@@ -140,7 +149,7 @@ def resolve(element, _depth=0):
         result = resolve(element.kind(**element.props), _depth + 1)
         return replace(result, key=element.key if element.key is not None else result.key,
                        identity=(element.kind, *result.identity))
-    if element.kind not in ("column", "row", "text", "progress", "button", "ring"):
+    if element.kind not in ("column", "row", "text", "progress", "button", "ring", "image"):
         raise ValueError(f"Unknown element: {element.kind}")
     children = tuple(resolve(child, _depth + 1) for child in element.children)
     keys = [child.key for child in children if child.key is not None]

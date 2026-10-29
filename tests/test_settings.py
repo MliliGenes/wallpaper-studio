@@ -38,7 +38,8 @@ class SettingsTests(unittest.TestCase):
                            ("rotate_hours", float("inf")), ("light_from", 24), ("light_from", True),
                            ("awake_interval", 0), ("clock_top", -1), ("clock_format", ""),
                            ("awake_method", "invalid"), ("widget_blur_radius", 65), ("widget_blur", "maybe"),
-                           ("typo", 1), ("folder", "/missing/ws-test-folder")):
+                           ("layout_grid_size", 7), ("layout_grid_size", 129), ("layout_grid_gap", -1),
+                           ("layout_grid_gap", 65), ("layout_grid_size", True), ("typo", 1), ("folder", "/missing/ws-test-folder")):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 settings.save_config(**{key: value})
         self.assertEqual(Path(self.file).read_text(), before)

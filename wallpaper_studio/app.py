@@ -195,8 +195,20 @@ class Window(Adw.ApplicationWindow):
 
         widgets = Adw.PreferencesGroup(title="Desktop widgets",
                                        description="Each widget has its own switch. Arrange cards on the desktop or style them in widgets.css.")
-        widgets.add(self.switch_row("Show desktop widgets", "Clock, calendar, system information and notes", "widgets_enabled"))
+        widgets.add(self.switch_row("Show desktop widgets", "Clock, calendar, system stats, notes, Logtime, Cleaner and now playing", "widgets_enabled"))
         widgets.add(self.switch_row("Arrange widgets", "Drag cards; resize the bottom-right corner or scroll to scale", "layout_edit"))
+        widgets.add(self.switch_row("Snap to grid", "Align card positions and sizes, with gaps between cells", "layout_grid"))
+        self.grid_spins = {}
+        for key, title, lower, upper in (("layout_grid_size", "Grid cell size (px)", 8, 128),
+                                         ("layout_grid_gap", "Grid spacing (px)", 0, 64)):
+            row = Adw.ActionRow(title=title)
+            spin = Gtk.SpinButton.new_with_range(lower, upper, 1)
+            spin.set_value(self.config[key])
+            spin.set_valign(Gtk.Align.CENTER)
+            spin.connect("value-changed", lambda widget, key=key: self.save(**{key: widget.get_value_as_int()}))
+            row.add_suffix(spin)
+            self.grid_spins[key] = spin
+            widgets.add(row)
         widgets.add(self.switch_row("Frosted widget glass", "Blur the wallpaper behind translucent cards", "widget_blur"))
         self.widget_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         widgets.add(self.widget_rows)
@@ -348,6 +360,8 @@ class Window(Adw.ApplicationWindow):
                 button.set_active(self.config["mode"] == mode)
             for key, switch in self.switches.items():
                 switch.set_active(self.config[key])
+            for key, spin in self.grid_spins.items():
+                spin.set_value(self.config[key])
             for key, entry in self.logtime_entries.items():
                 if previous[key] != self.config[key]:
                     entry.set_text(str(self.config[key]))

@@ -45,6 +45,8 @@ class DesktopWidgets:
         self.has_layout = False
         self.area = None
         self.positioning = False
+        self.geometry_timer = 0
+        self.closed = False
         self.module_timer = 0
         self.drag = None
         self.drag_timer = 0
@@ -71,6 +73,7 @@ class DesktopWidgets:
         self.window.set_app_paintable(True)
         self.canvas = Gtk.Fixed()
         self.canvas.set_name("desktop-layout")
+        self.canvas.connect("draw", self.draw_grid)
         self.window.add(self.canvas)
         self.canvas.show()
         screen = self.window.get_screen()
@@ -135,6 +138,55 @@ class DesktopWidgets:
             x, y = self.canvas.child_get(frame.container, "x", "y")
             return self.backdrop.draw(widget, context, self.area[0] + x, self.area[1] + y)
         return False
+
+    def draw_grid(self, canvas, cr):
+        if not self.edit_mode or not self.config["layout_grid"]:
+            return False
+        gap = self.config["layout_grid_gap"]
+        pitch = self.config["layout_grid_size"] + gap
+        color = self.window.get_style_context().get_color(Gtk.StateFlags.NORMAL)
+        cr.set_source_rgba(color.red, color.green, color.blue, .22)
+        for x in range(gap, canvas.get_allocated_width(), pitch):
+            for y in range(gap, canvas.get_allocated_height(), pitch):
+                cr.rectangle(x, y, 2, 2)
+        cr.fill()
+        return False
+
+    def queue_geometry(self, *_args):
+        # GTK resolves inherited font/CSS sizes lazily. Remeasure after style changes
+        # even when the old minimum request prevents a window size-allocate signal.
+        if not self.closed and not self.geometry_timer:
+            self.geometry_timer = GLib.idle_add(self.refresh_geometry)
+
+    def refresh_geometry(self):
+        self.geometry_timer = 0
+        self.position()
+        if self.drag:
+            self.drag_frame()
+        return False
+
+    def card_size(self, frame):
+        # Measure the content, not the container's previous grid request: otherwise
+        # every resize would feed its own padding back into the next measurement.
+        _minimum, natural = frame.renderer.root.widget.get_preferred_size()
+        width, height = natural.width, natural.height
+        if self.config["layout_grid"]:
+            cell, gap = self.config["layout_grid_size"], self.config["layout_grid_gap"]
+            width, height = layout.grid_extent(width, cell, gap), layout.grid_extent(height, cell, gap)
+            request = (width, height)
+        else:
+            request = (-1, -1)
+        if frame.container.get_size_request() != request:
+            frame.container.set_size_request(*request)
+        return width, height
+
+    def snap_position(self, x, y, width, height):
+        if self.config["layout_grid"]:
+            cell, gap = self.config["layout_grid_size"], self.config["layout_grid_gap"]
+            return (layout.grid_coordinate(x, width, self.area[2], cell, gap),
+                    layout.grid_coordinate(y, height, self.area[3], cell, gap))
+        return (max(0, min(max(0, self.area[2] - width), round(x))),
+                max(0, min(max(0, self.area[3] - height), round(y))))
 
     def on_module_change(self, _monitor, file, _other, _event):
         if file.get_basename().endswith(".py"):
@@ -269,6 +321,7 @@ class DesktopWidgets:
             frame.overlay.add(widget)
         if widget not in self.drawn_widgets:
             widget.connect("draw", lambda current, context: self.draw_glass(name, current, context))
+            widget.connect("style-updated", self.queue_geometry)
             self.drawn_widgets.add(widget)
             widget.connect("destroy", lambda current: self.drawn_widgets.discard(current))
         frame.grip.set_visible(bool(self.edit_mode))
@@ -299,11 +352,13 @@ class DesktopWidgets:
             return False
         frame = self.frames[self.drag["id"]]
         if self.drag["resize"]:
-            _minimum, natural = frame.container.get_preferred_size()
+            width, height = self.card_size(frame)
             allocation = frame.container.get_allocation()
-            if (allocation.width, allocation.height) != (natural.width, natural.height):
-                allocation.width, allocation.height = natural.width, natural.height
+            if (allocation.width, allocation.height) != (width, height):
+                allocation.width, allocation.height = width, height
                 frame.container.size_allocate(allocation)
+                x, y = self.canvas.child_get(frame.container, "x", "y")
+                self.move_card(frame, *self.snap_position(x, y, width, height))
                 self.canvas.queue_draw()
         self.input_region()
         return True
@@ -364,13 +419,16 @@ class DesktopWidgets:
             horizontal, vertical = dx / drag["width"], dy / drag["height"]
             ratio = 1 + (horizontal if abs(horizontal) > abs(vertical) else vertical)
             frame.preview_scale = max(.5, min(2.5, drag["scale"] * ratio))
+            if self.config["layout_grid"]:
+                frame.preview_scale = layout.grid_scale(drag["scale"], drag["width"], drag["height"],
+                                                       dx, dy, self.config["layout_grid_size"],
+                                                       self.config["layout_grid_gap"])
             self.scale_styles()
             frame.container.queue_resize()
             self.canvas.queue_draw()
         else:
             width, height = frame.container.get_allocated_width(), frame.container.get_allocated_height()
-            x = max(0, min(self.area[2] - width, round(drag["x"] + dx)))
-            y = max(0, min(self.area[3] - height, round(drag["y"] + dy)))
+            x, y = self.snap_position(drag["x"] + dx, drag["y"] + dy, width, height)
             self.move_card(frame, x, y)
         self.input_region()
         return True
@@ -379,6 +437,7 @@ class DesktopWidgets:
         if not self.drag or event.button != 1:
             return False
         name = self.drag["id"]
+        self.drag_frame()
         self.stop_drag_timer()
         self.drag = None
         frame = self.frames.get(name)
@@ -402,6 +461,12 @@ class DesktopWidgets:
             return False
         frame = self.frames[name]
         scale = round(max(.5, min(2.5, frame.placement.scale + (.1 if direction == Gdk.ScrollDirection.UP else -.1))), 2)
+        if self.config["layout_grid"]:
+            width, height = self.card_size(frame)
+            step = self.config["layout_grid_size"] + self.config["layout_grid_gap"]
+            delta = step if direction == Gdk.ScrollDirection.UP else -step
+            scale = layout.grid_scale(frame.placement.scale, width, height, delta, 0,
+                                      self.config["layout_grid_size"], self.config["layout_grid_gap"])
         try:
             layout.save_placement(name, scale=scale)
             self.reload_layout()
@@ -435,11 +500,18 @@ class DesktopWidgets:
                 if frame.container is None:
                     continue
                 widget = frame.container
-                _minimum, natural = widget.get_preferred_size()
+                width, height = self.card_size(frame)
                 x, y = layout.coordinates(frame.placement, area.width, area.height,
-                                           natural.width, natural.height, self.config["clock_top"])
+                                           width, height, self.config["clock_top"])
+                x, y = self.snap_position(x, y, width, height)
                 if not self.drag or self.drag["id"] != frame.placement.id:
                     self.canvas.move(widget, x, y)
+                    if self.config["layout_grid"]:
+                        allocation = widget.get_allocation()
+                        if (allocation.x, allocation.y, allocation.width, allocation.height) != (x, y, width, height):
+                            allocation.x, allocation.y = x, y
+                            allocation.width, allocation.height = width, height
+                            widget.size_allocate(allocation)
             self.input_region()
         finally:
             self.positioning = False
@@ -469,10 +541,13 @@ class DesktopWidgets:
         return True
 
     def close(self):
+        self.closed = True
         self.stop_drag_timer()
         GLib.source_remove(self.timer)
         if self.module_timer:
             GLib.source_remove(self.module_timer)
+        if self.geometry_timer:
+            GLib.source_remove(self.geometry_timer)
         self.module_monitor.cancel()
         self.window.get_screen().disconnect(self.screen_handler)
         if self.provider:

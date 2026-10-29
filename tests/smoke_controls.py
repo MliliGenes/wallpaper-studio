@@ -36,14 +36,24 @@ def main():
         with patch.object(app.Window, "load_library"), patch.object(app.core, "start_helper"):
             window = app.Window(application)
             try:
-                assert set(window.widget_toggles) == {"clock", "calendar", "system", "notes", "logtime"}
+                assert set(window.widget_toggles) == {"clock", "calendar", "system", "cleaner", "notes", "logtime", "now-playing"}
+                window.widget_toggles["now-playing"].set_active(False)
+                wait(lambda: not next(p for p in layout.load_layout() if p.id == "now-playing").enabled)
+                window.widget_toggles["now-playing"].set_active(True)
+                wait(lambda: next(p for p in layout.load_layout() if p.id == "now-playing").enabled)
+                window.switches["layout_grid"].set_active(False)
+                wait(lambda: not settings.load_config()["layout_grid"])
+                window.grid_spins["layout_grid_size"].set_value(48)
+                window.grid_spins["layout_grid_gap"].set_value(12)
+                wait(lambda: settings.load_config()["layout_grid_size"] == 48)
+                wait(lambda: settings.load_config()["layout_grid_gap"] == 12)
                 window.logtime_entries["logtime_username"].set_text("sel-mlil")
                 window.logtime_entries["logtime_goal"].set_text("196")
                 window.save_logtime()
                 assert settings.load_config()["logtime_username"] == "sel-mlil"
                 assert settings.load_config()["logtime_goal"] == 196
                 window.widget_toggles["logtime"].set_active(False)
-                wait(lambda: not layout.load_layout()[4].enabled)
+                wait(lambda: not next(p for p in layout.load_layout() if p.id == "logtime").enabled)
                 assert window.widget_toggles["calendar"].get_active()
                 window.widget_toggles["calendar"].set_active(False)
                 wait(lambda: not layout.load_layout()[1].enabled)

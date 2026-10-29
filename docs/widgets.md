@@ -2,7 +2,7 @@
 
 The desktop is one transparent GTK layout. Its cards share a stylesheet, but each has
 its own component, position, scale, props and on/off switch. The built-in cards are
-**Clock**, **Calendar**, **System stats** (actual CPU, memory and disk usage), **Notes**, and **Logtime**.
+**Clock**, **Calendar**, **System stats** (actual CPU, memory and disk usage), **Notes**, **Logtime**, **Cleaner**, and **Now playing**.
 
 ## Arrange cards on the desktop
 
@@ -12,9 +12,31 @@ After installing this version with `./install.sh`, enable arrange mode:
 ws layout edit
 ```
 
-- Drag a card to move it; it follows the pointer while you drag.
+- Drag a card to move it; it snaps to the grid while you drag.
 - Drag its lower-right corner to resize it, or scroll over it to change its scale.
+  Both resize controls snap the card’s footprint to whole grid cells.
 - Positions and sizes are saved when you release the card. Scale ranges from 0.5 to 2.5.
+
+**Snap to grid** is enabled by default, with 32-pixel cells and 8-pixel gaps. Cards can
+span several cells; adjacent spans leave the configured gap. Dotted guides appear only
+in arrange mode. Content keeps its proportions as it scales, with spare space inside the
+card so both outer dimensions align with the grid. Positions stay within the work area
+when the card fits; oversized content is kept at the nearest visible edge.
+
+The GUI’s **Desktop widgets** group and TUI’s **Widgets** panel expose **Snap to grid**,
+**Grid cell size (px)** and **Grid spacing (px)**. You can also use:
+
+```sh
+ws config set layout_grid true
+ws config set layout_grid_size 32
+ws config set layout_grid_gap 8
+```
+
+Cell size accepts 8–128 pixels; spacing accepts 0–64. Grid settings apply to the entire
+layout. Existing placements are displayed at the nearest grid position; dragging saves
+that snapped position. Turn **Snap to grid** off for free movement and continuous corner
+resizing. This is an alignment grid, not automatic packing: dragging cards onto occupied
+cells can still overlap them.
 
 Finish with:
 
@@ -97,7 +119,7 @@ For example, this layout contains two independently controlled cards:
 ```
 
 Each `id` must be unique. The available built-in component names are `Clock`, `Calendar`,
-`System`, `Notes` and `Logtime`. Custom component names refer to Python filenames in your `widgets/`
+`System`, `Notes`, `Logtime`, `Cleaner` and `NowPlaying`. Custom component names refer to Python filenames in your `widgets/`
 folder, without `.py`.
 
 Anchors combine `top`, `center` or `bottom` with `left`, `center` or `right`, for example
@@ -112,12 +134,42 @@ component with different IDs and props.
 
 ```sh
 ws layout path      # print the layout file path
-ws layout reset     # replace placements with the default five-card layout
+ws layout reset     # replace placements with the default layout
 ```
 
 Reset deliberately replaces `layout.json`; copy your custom layout first if you want to
 keep it. The installer upgrades the exact former clock-only starter layout, and preserves
 layouts that have been customized.
+
+## Now playing
+
+The `NowPlaying` card shows the title, artist, album, player and playback status, with
+compact << / > or || / >> buttons, with tooltips and accessible labels. Album artwork
+comes from the player’s `mpris:artUrl` (local files or HTTP/HTTPS); a music-note placeholder
+is shown when unavailable. Artwork loads in its own worker, with a 5 MiB limit, and stale
+results are discarded when the track changes. It reads the session bus through Gio using MPRIS;
+no playerctl or extra pip package is needed. Players must expose MPRIS (browser support
+also depends on the browser and site). GTK itself does not discover external playback.
+
+Playing sources take priority over paused or stopped ones. Among equally active sources,
+the current source stays selected. Unsupported controls are disabled. With no player,
+the card displays “Nothing playing”. Discovery refreshes about once a second in a worker
+thread; slow or disappearing players cannot block GTK. Disabling the card cancels its
+D-Bus calls and stops its worker.
+
+New/default layouts include it. Existing nonempty layouts gain the card automatically
+without changing any existing placements or settings. It appears in the GUI’s **Desktop
+widgets** group and the TUI’s **Widgets** panel. Toggle it there, then enable **Arrange
+widgets** to drag or resize it. Disabled instances stay disabled, and empty layouts stay
+empty. You can also add it manually to `layout.json`:
+
+```json
+{"id": "now-playing", "component": "NowPlaying", "anchor": "center-right", "x": 32, "y": 0, "scale": 1}
+```
+
+Then use the GUI/TUI switch or `ws layout enable now-playing`. Its CSS classes are
+`.media-card`, `.media-title`, and `.media-detail`. It uses the usual shared palette,
+arrange mode and button input handling.
 
 ## Logtime
 
@@ -270,7 +322,8 @@ Available elements:
 | `Row(*children)` | Horizontal box | `spacing` |
 | `Text(text)` | Label | `wrap`, `max_width_chars` |
 | `Progress(value)` | Progress bar | Fraction 0..1, optional `text` |
-| `Button(text)` | Button | `on_click` callback, `sensitive` |
+| `Button(text)` | Button | `on_click` callback, `sensitive`, `tooltip` |
+| `Image(data)` | Drawing area | Encoded image bytes or `None` for a placeholder; CSS size in `em` |
 | `Ring(value, *children)` | Drawing area + overlay | Fraction 0..1, children inside the arc |
 
 All support `class_name`, `visible`, `expand`, `align` and stable sibling `key` values.

@@ -5,7 +5,8 @@ import math
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk  # noqa: E402
+gi.require_version("PangoCairo", "1.0")
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, PangoCairo  # noqa: E402
 
 from .components import resolve  # noqa: E402
 
@@ -64,6 +65,31 @@ class Renderer:
             cr.stroke()
         return False
 
+    @staticmethod
+    def draw_image(area, cr):
+        width, height = area.get_allocated_width(), area.get_allocated_height()
+        pixbuf = area.artwork
+        if pixbuf is not None:
+            scale = min(width / pixbuf.get_width(), height / pixbuf.get_height())
+            cr.save()
+            cr.translate((width - pixbuf.get_width() * scale) / 2,
+                         (height - pixbuf.get_height() * scale) / 2)
+            cr.scale(scale, scale)
+            Gdk.cairo_set_source_pixbuf(cr, pixbuf, 0, 0)
+            cr.paint()
+            cr.restore()
+        else:
+            color = area.get_style_context().get_color(Gtk.StateFlags.NORMAL)
+            cr.set_source_rgba(color.red, color.green, color.blue, .12)
+            cr.rectangle(0, 0, width, height)
+            cr.fill()
+            label = area.create_pango_layout("♫")
+            w, h = label.get_pixel_size()
+            cr.move_to((width - w) / 2, (height - h) / 2)
+            cr.set_source_rgba(color.red, color.green, color.blue, .65)
+            PangoCairo.show_layout(cr, label)
+        return False
+
     @property
     def visible(self):
         return self.root is not None and self.root.visible
@@ -83,6 +109,12 @@ class Renderer:
         if mounted is None:
             if element.kind in ("column", "row"):
                 widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if element.kind == "column" else Gtk.Orientation.HORIZONTAL)
+            elif element.kind == "image":
+                widget = Gtk.DrawingArea()
+                widget.artwork = None
+                widget.get_style_context().add_class("widget-image")
+                widget.connect("style-updated", self.size_ring)
+                widget.connect("draw", self.draw_image)
             elif element.kind == "text":
                 widget = Gtk.Label()
             elif element.kind == "button":
@@ -127,6 +159,24 @@ class Renderer:
             widget.set_visible(props["visible"])
             if element.kind in ("column", "row"):
                 widget.set_spacing(props["spacing"])
+            elif element.kind == "image":
+                if props["data"] != previous.get("data"):
+                    widget.artwork = None
+                    if props["data"]:
+                        loader = GdkPixbuf.PixbufLoader()
+                        loader.connect("size-prepared", lambda loader, w, h: loader.set_size(
+                            max(1, round(w * min(1, 512 / max(w, h)))),
+                            max(1, round(h * min(1, 512 / max(w, h))))))
+                        try:
+                            loader.write(props["data"])
+                            loader.close()
+                            widget.artwork = loader.get_pixbuf()
+                        except GLib.Error:
+                            try:
+                                loader.close()
+                            except GLib.Error:
+                                pass
+                    widget.queue_draw()
             elif element.kind == "text":
                 widget.set_text(props["text"])
                 widget.set_line_wrap(props["wrap"])
@@ -139,6 +189,8 @@ class Renderer:
                     if widget.get_realized():
                         widget.size_allocate(widget.get_allocation())
                 widget.set_sensitive(props["sensitive"])
+                widget.set_tooltip_text(props["tooltip"] or None)
+                widget.get_accessible().set_name(props["tooltip"] or props["text"])
             elif element.kind == "ring":
                 widget.queue_draw()
             else:

@@ -21,6 +21,8 @@ LABELS = {
     "clock_top": "Distance below top panel", "folder": "Wallpaper folder", "rotate_hours": "Rotate every (hours)",
     "awake_method": "Keep-awake method", "awake_interval": "Movement interval (seconds)",
     "widgets_enabled": "Show all widgets", "layout_edit": "Arrange widgets with mouse",
+    "layout_grid": "Snap to grid", "layout_grid_size": "Grid cell size (px)",
+    "layout_grid_gap": "Grid spacing (px)",
     "widget_blur": "Frosted widget glass", "widget_blur_radius": "Glass blur radius",
     "logtime_username": "Logtime username", "logtime_goal": "Logtime goal (hours)",
 }
@@ -147,7 +149,7 @@ class Panel:
             return rows
         keys = {
             1: ("mode", "glass", "terminal", "lock_screen", "light_from", "dark_from"),
-            2: ("clock", "clock_format", "clock_date_format", "clock_top", "widgets_enabled", "layout_edit", "widget_blur", "widget_blur_radius", "logtime_username", "logtime_goal"),
+            2: ("clock", "clock_format", "clock_date_format", "clock_top", "widgets_enabled", "layout_edit", "layout_grid", "layout_grid_size", "layout_grid_gap", "widget_blur", "widget_blur_radius", "logtime_username", "logtime_goal"),
             3: ("awake_method", "awake_interval"),
         }
         if self.page in keys:

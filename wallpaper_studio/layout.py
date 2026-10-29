@@ -92,10 +92,30 @@ def ensure_layout():
             storage.write(storage.LAYOUT, DEFAULT_FILE.read_text())
         else:
             current_default = json.loads(DEFAULT_FILE.read_text())
-            previous_default = {**current_default, "widgets": [entry for entry in current_default["widgets"]
-                                                              if entry["component"] != "Logtime"]}
-            if storage.read_json(storage.LAYOUT, {}) == previous_default:
-                storage.write(storage.LAYOUT, DEFAULT_FILE.read_text())
+            for omitted in ({"NowPlaying"}, {"Logtime"}, {"NowPlaying", "Logtime"}):
+                previous_default = {**current_default, "widgets": [entry for entry in current_default["widgets"]
+                                                                  if entry["component"] not in omitted]}
+                if storage.read_json(storage.LAYOUT, {}) == previous_default:
+                    storage.write(storage.LAYOUT, DEFAULT_FILE.read_text())
+                    break
+
+    # Make the new built-in discoverable in both control panels without moving existing cards.
+    with storage.locked():
+        document = storage.read_json(storage.LAYOUT, {})
+        try:
+            placements = parse_layout(document)
+        except ValueError:
+            return  # Leave malformed user edits for the normal reload/error handling.
+        if placements and not any(item.component == "NowPlaying" for item in placements):
+            entry = next(item.copy() for item in json.loads(DEFAULT_FILE.read_text())["widgets"]
+                         if item["component"] == "NowPlaying")
+            ids = {item.id for item in placements}
+            base, suffix = entry["id"], 2
+            while entry["id"] in ids:
+                entry["id"] = f"{base}-{suffix}"
+                suffix += 1
+            document["widgets"].append(entry)
+            storage.write(storage.LAYOUT, json.dumps(document, indent=2) + "\n")
 
 
 def save_placement(widget_id, **changes):
@@ -132,8 +152,8 @@ def set_enabled(widget_id, enabled):
 
 
 def widget_title(placement):
-    title = placement.props.get("title") or {"Clock": "Clock", "Calendar": "Calendar", "System": "System stats", "Notes": "Notes"}.get(placement.component, placement.component)
-    return str(title) if placement.id.lower() == placement.component.lower() else f"{title} ({placement.id})"
+    title = placement.props.get("title") or {"Clock": "Clock", "Calendar": "Calendar", "System": "System stats", "Notes": "Notes", "NowPlaying": "Now playing"}.get(placement.component, placement.component)
+    return str(title) if placement.id.replace("-", "").lower() == placement.component.lower() else f"{title} ({placement.id})"
 
 
 def coordinates(placement, area_width, area_height, widget_width, widget_height, clock_top=32):
@@ -144,6 +164,29 @@ def coordinates(placement, area_width, area_height, widget_width, widget_height,
     x = placement.x if horizontal == "left" else free_x - placement.x if horizontal == "right" else free_x // 2 + placement.x
     y = offset_y if vertical == "top" else free_y - offset_y if vertical == "bottom" else free_y // 2 + offset_y
     return max(0, min(free_x, x)), max(0, min(free_y, y))
+
+
+def grid_extent(size, cell, gap):
+    """Smallest whole-cell footprint containing the content, excluding its last gutter."""
+    return max(1, math.ceil((size + gap) / (cell + gap))) * (cell + gap) - gap
+
+
+def grid_coordinate(value, extent, available, cell, gap):
+    """Snap to the nearest origin that fits, with a gutter at the work-area edges."""
+    pitch = cell + gap
+    last = math.floor((available - extent - 2 * gap) / pitch)
+    if last < 0:
+        return max(0, min(max(0, available - extent), gap))
+    index = math.floor((value - gap) / pitch + .5)
+    return gap + max(0, min(last, index)) * pitch
+
+
+def grid_scale(scale, width, height, dx, dy, cell, gap):
+    """Resize uniformly, snapping the dominant edge to a whole grid span."""
+    size, delta = (width, dx) if abs(dx / width) >= abs(dy / height) else (height, dy)
+    pitch = cell + gap
+    cells = max(1, math.floor((size + delta + gap) / pitch + .5))
+    return max(.5, min(2.5, scale * (cells * pitch - gap) / size))
 
 
 class ComponentLoader:

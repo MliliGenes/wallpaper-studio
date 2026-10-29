@@ -14,7 +14,7 @@ def main():
         os.environ["XDG_CONFIG_HOME"] = directory
         os.environ["XDG_CACHE_HOME"] = directory
         from wallpaper_studio.widget_runtime import DesktopWidgets
-        from wallpaper_studio.components import Column, Progress, Text, component
+        from wallpaper_studio.components import Column, Image, Progress, Text, component
         from wallpaper_studio.gtk_renderer import Renderer
         from wallpaper_studio.widgets import Clock
         from gi.repository import Gdk, Gtk, GLib
@@ -47,6 +47,7 @@ def main():
         colors = palette.build([(215, .65, .4), (330, .65, .4)] * 10)
         core._save_state({"still": str(wallpaper_path), "palette": colors, "mode": "dark"})
         core._write(core.THEME_CSS, palette.gtk_css(colors["dark"], True, False))
+        core.save_config(layout_grid=False)
         locked = [False]
         host = DesktopWidgets(lambda: locked[0])
         def settle():
@@ -82,7 +83,18 @@ def main():
             assert host.window.get_type_hint() == Gdk.WindowTypeHint.NORMAL
             assert host.backdrop.surface is not None
             assert host.window.get_style_context().has_class("glass-ready")
-            assert set(host.frames) == {"clock", "calendar", "system", "notes", "logtime"}
+            assert set(host.frames) == {"clock", "calendar", "system", "cleaner", "notes", "logtime", "now-playing"}
+            media = host.frames["now-playing"]
+            assert media.renderer.find("title").get_text()
+            assert len(media.renderer.buttons()) == 3
+            assert media.renderer.find("Previous").get_child().get_text() == "<<"
+            assert media.renderer.find("Previous").get_tooltip_text() == "Previous"
+            assert media.renderer.find("artwork").get_allocated_width() > 20
+            media_model = media.models["now-playing"]
+            layout.set_enabled("now-playing", False)
+            layout.set_enabled("cleaner", False)
+            host.reload()
+            assert media_model._closed.is_set()
             logtime = host.frames["logtime"]
             model = logtime.models["logtime"]
             from datetime import date
@@ -236,9 +248,45 @@ def main():
             scale = host.frames["clock"].placement.scale
             assert host.scroll_scale("clock", SimpleNamespace(direction=Gdk.ScrollDirection.UP))
             assert host.frames["clock"].placement.scale > scale
+            # Grid geometry survives movement, resize, reload, and leaving arrange mode.
+            core.save_config(layout_grid=True, layout_grid_size=32, layout_grid_gap=8)
+            host.reload()
+            settle()
+            frame = host.frames["clock"]
+            def assert_grid():
+                x, y = host.canvas.child_get(frame.container, "x", "y")
+                w, h = frame.container.get_allocated_width(), frame.container.get_allocated_height()
+                assert (x - 8) % 40 == 0 and (y - 8) % 40 == 0, (x, y)
+                assert (w + 8) % 40 == 0 and (h + 8) % 40 == 0, (w, h, frame.container.get_size_request(), host.card_size(frame))
+                return x, y, w, h
+            x, y, w, h = assert_grid()
+            start = SimpleNamespace(button=1, x_root=host.area[0] + x + 20, y_root=host.area[1] + y + 20)
+            assert host.begin_drag("clock", start)
+            host.drag_motion(SimpleNamespace(x_root=start.x_root + 63, y_root=start.y_root + 57))
+            host.end_drag(SimpleNamespace(button=1))
+            settle()
+            x, y, w, h = assert_grid()
+            assert (frame.placement.x, frame.placement.y) == (x, y)
+            corner = SimpleNamespace(button=1, x_root=host.area[0] + x + w - 2, y_root=host.area[1] + y + h - 2)
+            assert host.begin_drag("clock", corner) and host.drag["resize"]
+            host.drag_motion(SimpleNamespace(x_root=corner.x_root + 80, y_root=corner.y_root + 40))
+            settle()
+            assert_grid()
+            host.end_drag(SimpleNamespace(button=1))
+            settle()
+            assert_grid()
+            previous_width = frame.container.get_allocated_width()
+            host.scroll_scale("clock", SimpleNamespace(direction=Gdk.ScrollDirection.DOWN))
+            settle()
+            assert_grid()
+            assert frame.container.get_allocated_width() < previous_width, ("Scroll down must shrink by a grid span", previous_width, frame.container.get_allocated_width(), frame.placement.scale, frame.renderer.root.widget.get_preferred_size()[1].width)
+            host.reload()
+            settle()
+            assert_grid()
             core.save_config(layout_edit=False)
             host.reload()
             settle()
+            assert_grid()
             assert host.window.get_type_hint() == Gdk.WindowTypeHint.NORMAL
             assert logtime.gesture.get_propagation_phase() == Gtk.PropagationPhase.NONE
             assert not host.window.get_window().get_pass_through(), "Only button rectangles accept input"
@@ -278,6 +326,16 @@ def main():
             raise AssertionError("Duplicate keys should fail")
         assert renderer.find("b") is b and b.get_text() == "B3"
         renderer.close()
+
+        # Image decoding is bounded, and invalid or missing artwork clears the old image.
+        artwork_renderer = Renderer()
+        artwork = artwork_renderer.render(Image(wallpaper_path.read_bytes(), key="cover"))
+        assert artwork.artwork is not None
+        assert max(artwork.artwork.get_width(), artwork.artwork.get_height()) <= 512
+        assert artwork_renderer.render(Image(b"invalid image", key="cover")) is artwork
+        assert artwork.artwork is None
+        artwork_renderer.render(Image(None, key="cover"))
+        artwork_renderer.close()
 
         # User widgets load from the config folder without app/core registration.
         Path(storage.CUSTOM_WIDGETS, "greeting.py").write_text(

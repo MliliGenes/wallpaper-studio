@@ -5,8 +5,9 @@ from .notes import Notes
 from .system import System
 from .logtime import Logtime
 from .cleaner import Cleaner
+from .now_playing import NowPlaying
 
-WIDGETS = (Clock, Calendar, System, Notes, Logtime, Cleaner)
+WIDGETS = (Clock, Calendar, System, Notes, Logtime, Cleaner, NowPlaying)
 
 
-__all__ = ["Clock", "Calendar", "System", "Notes", "Logtime", "Cleaner", "WIDGETS"]
+__all__ = ["Clock", "Calendar", "System", "Notes", "Logtime", "Cleaner", "NowPlaying", "WIDGETS"]

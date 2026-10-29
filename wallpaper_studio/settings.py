@@ -21,6 +21,9 @@ DEFAULT_CONFIG = {
     "clock_top": 32,
     "widgets_enabled": True,
     "layout_edit": False,
+    "layout_grid": True,
+    "layout_grid_size": 32,
+    "layout_grid_gap": 8,
     "widget_blur": True,
     "widget_blur_radius": 24,
     "logtime_username": "",
@@ -44,6 +47,9 @@ DESCRIPTIONS = {
     "clock_top": "Clock offset below the primary monitor's work area, in pixels",
     "widgets_enabled": "Show the desktop widget layout",
     "layout_edit": "Arrange mode: drag cards, resize the corner or scroll to scale",
+    "layout_grid": "Snap widget positions and sizes to the grid",
+    "layout_grid_size": "Grid cell size in pixels (8–128)",
+    "layout_grid_gap": "Space between grid cells in pixels (0–64)",
     "widget_blur": "Frosted wallpaper backdrop behind widget cards",
     "widget_blur_radius": "Wallpaper softening radius in pixels (0–64; 0 disables blur)",
     "logtime_username": "1337 login for the Logtime widget; empty pauses requests",
@@ -62,13 +68,13 @@ def validate(key, value):
             value = value.lower() in ("true", "on", "1")
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be true or false")
-    elif key in ("light_from", "dark_from", "clock_top", "awake_interval", "widget_blur_radius"):
+    elif key in ("light_from", "dark_from", "clock_top", "awake_interval", "widget_blur_radius", "layout_grid_size", "layout_grid_gap"):
         if isinstance(value, str):
             try:
                 value = int(value)
             except ValueError:
                 raise ValueError(f"{key} must be an integer") from None
-        lo, hi = (0, 23) if key.endswith("_from") else (10, 300) if key == "awake_interval" else (0, 64) if key == "widget_blur_radius" else (0, 2000)
+        lo, hi = (8, 128) if key == "layout_grid_size" else (0, 64) if key == "layout_grid_gap" else (0, 23) if key.endswith("_from") else (10, 300) if key == "awake_interval" else (0, 64) if key == "widget_blur_radius" else (0, 2000)
         if type(value) is not int or not lo <= value <= hi:
             raise ValueError(f"{key} must be an integer from {lo} to {hi}")
     elif key in ("rotate_hours", "logtime_goal"):
