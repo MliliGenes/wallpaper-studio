@@ -8,6 +8,8 @@ DIRECTORY = Path(__file__).with_name("styles")
 
 
 def ensure_user_styles():
+    from .layout import ensure_layout
+    ensure_layout()
     os.makedirs(storage.CONFIG_DIR, exist_ok=True)
     for name in ("app.css", "widgets.css"):
         try:

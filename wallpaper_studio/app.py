@@ -11,7 +11,7 @@ gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
-from . import core, styles  # noqa: E402
+from . import core, layout, styles  # noqa: E402
 
 APP_ID = "io.github.WallpaperStudio"
 THUMB_W, THUMB_H = 480, 270          # pixels on disk; shown at half size, sharp on HiDPI screens
@@ -68,6 +68,7 @@ class Window(Adw.ApplicationWindow):
     def __init__(self, app):
         super().__init__(application=app, title="Wallpaper Studio", default_width=900, default_height=780)
         self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+        self.widget_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self.thumbs = {}            # path -> button in the grid
         self.busy = False
         self.showing_awake = False
@@ -193,8 +194,26 @@ class Window(Adw.ApplicationWindow):
         box.append(look)
 
         widgets = Adw.PreferencesGroup(title="Desktop widgets",
-                                       description="Style the clock in ~/.config/wallpaper-studio/widgets.css")
-        widgets.add(self.switch_row("Desktop clock", "Show time and date at the top centre of the desktop", "clock"))
+                                       description="Each widget has its own switch. Arrange cards on the desktop or style them in widgets.css.")
+        widgets.add(self.switch_row("Show desktop widgets", "Clock, calendar, system information and notes", "widgets_enabled"))
+        widgets.add(self.switch_row("Arrange widgets", "Drag cards; resize the bottom-right corner or scroll to scale", "layout_edit"))
+        widgets.add(self.switch_row("Frosted widget glass", "Blur the wallpaper behind translucent cards", "widget_blur"))
+        self.widget_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        widgets.add(self.widget_rows)
+        self.load_widget_rows()
+        self.logtime_entries = {}
+        for key, title in (("logtime_username", "Logtime username"), ("logtime_goal", "Logtime goal (hours)")):
+            row = Adw.ActionRow(title=title)
+            entry = Gtk.Entry(text=str(self.config[key]), valign=Gtk.Align.CENTER, width_chars=14)
+            entry.connect("activate", lambda _entry: self.save_logtime())
+            row.add_suffix(entry)
+            self.logtime_entries[key] = entry
+            widgets.add(row)
+        row = Adw.ActionRow(title="Apply Logtime settings", subtitle="Each period starts on the 28th and ends on the following month's 27th")
+        apply = Gtk.Button(label="Apply", valign=Gtk.Align.CENTER)
+        apply.connect("clicked", lambda *_: self.save_logtime())
+        row.add_suffix(apply)
+        widgets.add(row)
         box.append(widgets)
 
         auto = Adw.PreferencesGroup(title="Change automatically",
@@ -211,10 +230,10 @@ class Window(Adw.ApplicationWindow):
                                       model=Gtk.StringList.new([label for _m, label in AWAKE_CHOICES]))
         self.awake_row.connect("notify::selected", self.on_awake)
         screen.add(self.awake_row)
-        method = Adw.ComboRow(title="Keep-awake method", model=Gtk.StringList.new(["GNOME + periodic F15 key", "GNOME inhibitor only"]),
-                             subtitle="Key events run only while Keep screen awake is on")
-        method.set_selected(0 if self.config["awake_method"] == "key" else 1)
-        method.connect("notify::selected", lambda c, _p: self.save(awake_method="key" if c.get_selected() == 0 else "inhibit"))
+        method = Adw.ComboRow(title="Keep-awake method", model=Gtk.StringList.new(["GNOME + periodic mouse movement", "GNOME inhibitor only"]),
+                             subtitle="Pointer moves to (0, 0) and back only while Keep screen awake is on")
+        method.set_selected(0 if self.config["awake_method"] == "mouse" else 1)
+        method.connect("notify::selected", lambda c, _p: self.save(awake_method="mouse" if c.get_selected() == 0 else "inhibit"))
         self.awake_method_combo = method
         screen.add(method)
         box.append(screen)
@@ -227,6 +246,46 @@ class Window(Adw.ApplicationWindow):
             return
         core.keep_awake(AWAKE_CHOICES[row.get_selected()][0])
         self.show_awake()
+
+    def save_logtime(self):
+        try:
+            self.save(**{key: entry.get_text() for key, entry in self.logtime_entries.items()})
+        except ValueError as error:
+            self.toasts.add_toast(Adw.Toast(title=str(error)))
+
+    def load_widget_rows(self):
+        while child := self.widget_rows.get_first_child():
+            self.widget_rows.remove(child)
+        self.widget_toggles = {}
+        try:
+            placements = layout.load_layout()
+        except (OSError, ValueError) as error:
+            self.widget_rows.append(Adw.ActionRow(title="Cannot load widget layout", subtitle=str(error)))
+            return
+        for placement in placements:
+            row = Adw.ActionRow(title=layout.widget_title(placement),
+                                subtitle=f"{placement.anchor} · {placement.scale:g}× scale")
+            switch = Gtk.Switch(active=layout.widget_enabled(placement, self.config), valign=Gtk.Align.CENTER)
+            switch.connect("notify::active", self.on_widget_toggle, placement.id)
+            row.add_suffix(switch)
+            row.set_activatable_widget(switch)
+            self.widget_rows.append(row)
+            self.widget_toggles[placement.id] = switch
+
+    def on_widget_toggle(self, switch, _param, widget_id):
+        enabled = switch.get_active()
+        def change():
+            layout.set_enabled(widget_id, enabled)
+            core.start_helper()
+            return True
+        def finish(future):
+            try:
+                future.result()
+            except Exception as error:
+                self.toasts.add_toast(Adw.Toast(title=str(error)))
+            self.sync_from_disk()
+            return False
+        self.widget_pool.submit(change).add_done_callback(lambda future: GLib.idle_add(finish, future))
 
     def update_rotation(self):
         choices = list(ROTATIONS)
@@ -273,7 +332,7 @@ class Window(Adw.ApplicationWindow):
     # --- showing state -------------------------------------------------------------------
 
     def on_file_change(self, _monitor, file, _other, _event):
-        if file.get_basename() not in ("state.json", "config.json"):
+        if file.get_basename() not in ("state.json", "config.json", "layout.json"):
             return
         if self.refresh_timer:
             GLib.source_remove(self.refresh_timer)
@@ -289,14 +348,18 @@ class Window(Adw.ApplicationWindow):
                 button.set_active(self.config["mode"] == mode)
             for key, switch in self.switches.items():
                 switch.set_active(self.config[key])
+            for key, entry in self.logtime_entries.items():
+                if previous[key] != self.config[key]:
+                    entry.set_text(str(self.config[key]))
             self.update_rotation()
-            self.awake_method_combo.set_selected(0 if self.config["awake_method"] == "key" else 1)
+            self.awake_method_combo.set_selected(0 if self.config["awake_method"] == "mouse" else 1)
             self.mode_row.set_subtitle(f"Auto is light from {self.config['light_from']:02d}:00 "
                                        f"and dark from {self.config['dark_from']:02d}:00")
         finally:
             self.syncing_config = False
         if previous["folder"] != self.config["folder"]:
             self.load_library()
+        self.load_widget_rows()
         self.show_current()
         return False
 
@@ -345,7 +408,7 @@ class Window(Adw.ApplicationWindow):
     def load_library(self):
         self.config = core.load_config()
         folder = self.config["folder"]
-        self.library_group.set_description("Built-in wallpapers" if folder == core.BUILT_IN
+        self.library_group.set_description("Built-in wallpapers" if os.path.realpath(folder) == os.path.realpath(core.BUILT_IN)
                                            else folder.replace(core.HOME, "~", 1))
         while child := self.grid.get_first_child():
             self.grid.remove(child)

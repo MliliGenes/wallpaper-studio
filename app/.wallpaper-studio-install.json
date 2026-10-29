@@ -1,0 +1,10 @@
+{
+  "app_id": "io.github.WallpaperStudio",
+  "bulk": "/home/sel-mlil/goinfre/wallpaper-studio",
+  "install_link": "/home/sel-mlil/.local/share/wallpaper-studio",
+  "app": "/home/sel-mlil/goinfre/wallpaper-studio/app",
+  "cache_link": "/home/sel-mlil/.cache/wallpaper-studio",
+  "cache": "/home/sel-mlil/goinfre/wallpaper-studio/cache",
+  "theme_links": "/home/sel-mlil/.local/share/themes",
+  "themes": "/home/sel-mlil/goinfre/wallpaper-studio/themes"
+}

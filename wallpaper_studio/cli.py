@@ -17,11 +17,16 @@ def parser():
         "apply": "Reapply the current colours", "restore": "Restore the original desktop",
         "status": "Print configuration, wallpaper state and awake request as JSON",
         "shell-init": "Print optional Bash/Zsh aliases",
+        "tui": "Open the interactive terminal control panel",
+        "paths": "Show installation, cache and configuration locations",
     }.items():
         commands.add_parser(name, help=help_text)
     commands.add_parser("set", help="Use an image or video").add_argument("file")
     commands.add_parser("awake", help="Keep awake: minutes, on, or off").add_argument("duration", nargs="?", default="60")
     commands.add_parser("clock", help="Show or hide the desktop clock").add_argument("action", choices=("on", "off", "toggle"), nargs="?", default="toggle")
+    layout_parser = commands.add_parser("layout", help="Arrange desktop widgets, toggle individual cards or reset their layout")
+    layout_parser.add_argument("action", choices=("edit", "done", "reset", "path", "list", "enable", "disable", "toggle"), nargs="?", default="edit")
+    layout_parser.add_argument("widget_id", nargs="?")
     config = commands.add_parser("config", help="Inspect or change preferences").add_subparsers(dest="config_command")
     config.add_parser("list", help="List values and descriptions")
     config.add_parser("path", help="Print the configuration file path")
@@ -48,6 +53,48 @@ def main(argv=None):
     args = parser().parse_args(argv)
     command = args.command or "open"
     try:
+        if command == "tui":
+            from . import tui
+            return tui.main()
+        if command == "paths":
+            print(json.dumps({"app": storage.PATHS.app, "cache": storage.CACHE_DIR,
+                              "config": storage.CONFIG_DIR, "themes": storage.PATHS.themes,
+                              "bulk_storage": storage.PATHS.bulk}, indent=2))
+            return 0
+        if command == "layout":
+            from . import layout
+            if args.action == "path":
+                print(storage.LAYOUT)
+            elif args.action == "list":
+                layout.ensure_layout()
+                config = settings.load_config()
+                for placement in layout.load_layout():
+                    print(f"{placement.id:20} {'on' if layout.widget_enabled(placement, config) else 'off':4} {layout.widget_title(placement)}")
+            elif args.action in ("enable", "disable", "toggle"):
+                if not args.widget_id:
+                    raise ValueError(f"usage: wallpaper-studio layout {args.action} WIDGET_ID")
+                layout.ensure_layout()
+                placement = next((item for item in layout.load_layout() if item.id == args.widget_id), None)
+                if placement is None:
+                    raise ValueError(f"Unknown widget: {args.widget_id}")
+                enabled = not layout.widget_enabled(placement, settings.load_config()) if args.action == "toggle" else args.action == "enable"
+                layout.set_enabled(args.widget_id, enabled)
+                apply_config()
+                print(f"{args.widget_id}: {'on' if enabled else 'off'}")
+            else:
+                layout.ensure_layout()
+                if args.action == "reset":
+                    storage.write(storage.LAYOUT, layout.DEFAULT_FILE.read_text())
+                    settings.save_config(widgets_enabled=True)
+                elif args.action == "edit":
+                    settings.save_config(layout_edit=True, widgets_enabled=True)
+                else:
+                    settings.save_config(layout_edit=False)
+                apply_config()
+                print("Layout reset." if args.action == "reset" else
+                      "Arrange mode on: drag cards, drag the bottom-right corner or scroll to resize." if args.action == "edit" else
+                      "Arrange mode off; desktop widgets are click-through.")
+            return 0
         if command == "config":
             action = args.config_command or "list"
             if action == "path":
@@ -75,7 +122,12 @@ def main(argv=None):
                   "alias wawake='wallpaper-studio awake'\nalias wclock='wallpaper-studio clock'")
             return 0
         if command == "clock":
+            from . import layout
             enabled = not settings.load_config()["clock"] if args.action == "toggle" else args.action == "on"
+            layout.ensure_layout()
+            for placement in layout.load_layout():
+                if placement.component == "Clock":
+                    layout.save_placement(placement.id, enabled=enabled)
             settings.save_config(clock=enabled)
             apply_config()
             print(f"Desktop clock {'on' if enabled else 'off'}.")

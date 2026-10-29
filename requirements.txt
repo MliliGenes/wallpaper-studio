@@ -1,0 +1,7 @@
+# Python bindings for GTK/libadwaita and Cairo; the TUI uses stdlib curses.
+# GTK 3, GTK 4, libadwaita and their introspection data are OS packages, not pip packages.
+# See README.md: "Run from source" for the recommended Ubuntu setup.
+# Keep PyGObject below 3.50 for Ubuntu 22.04's GLib version:
+# https://pygobject.gnome.org/guide/sysdeps.html
+PyGObject>=3.42,<3.50
+pycairo>=1.20,<2

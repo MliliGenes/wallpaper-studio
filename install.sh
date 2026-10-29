@@ -56,19 +56,22 @@ if [ -f "$HOME/.config/autostart/studio-wallpaper.desktop" ]; then
 	exit 1
 fi
 
+# The stable path stays in ~/.local/share; bulky code, wallpapers and caches prefer ~/goinfre.
+STORAGE_OUTPUT=$("$PYTHON" -m wallpaper_studio.install_storage paths)
+mapfile -t STORAGE_PATHS <<<"$STORAGE_OUTPUT"
+APP_STORAGE=${STORAGE_PATHS[0]}
+LOG_DIR=${STORAGE_PATHS[1]}
+THEME_STORAGE=${STORAGE_PATHS[2]}
+
 # --- the app ------------------------------------------------------------------------
-say "Installing to $DEST"
+say "Installing to $APP_STORAGE"
 # stop this install's background helper (and one started by an older version) before replacing it
-HELPER="^[^ ]+ $DEST/wallpaper-studio desktop\$|^[^ ]*python3[^ ]* -m wallpaper_studio desktop\$"
+HELPER=$("$PYTHON" -m wallpaper_studio.install_storage helper-pattern)
 pkill -f "$HELPER" 2>/dev/null || true
 for _ in $(seq 50); do pgrep -f "$HELPER" >/dev/null || break; sleep 0.1; done   # let it let go first
-rm -rf "$DEST"
-mkdir -p "$DEST" "$HOME/.local/bin" "$HOME/.local/share/applications" \
+"$PYTHON" -m wallpaper_studio.install_storage install --source "$PWD" --python "$PYTHON"
+mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" \
 	"$HOME/.local/share/icons/hicolor/scalable/apps" "$HOME/.config/autostart"
-cp -r wallpaper_studio wallpaper-studio wallpapers "$DEST/"
-find "$DEST" -name __pycache__ -prune -exec rm -rf {} +
-# always run with the Python that has GTK, whatever python3 comes first in PATH later
-sed -i "1s|^#!.*|#!$PYTHON|" "$DEST/wallpaper-studio"
 ln -sf "$DEST/wallpaper-studio" "$HOME/.local/bin/wallpaper-studio"
 # A real executable shortcut works in Bash, Zsh and scripts without sourcing shell config.
 if [ ! -e "$HOME/.local/bin/ws" ] && [ ! -L "$HOME/.local/bin/ws" ] || \
@@ -102,17 +105,30 @@ NoDisplay=true
 X-GNOME-Autostart-enabled=true
 DESKTOP
 
+# A small cache-cleaner window, also available through the desktop widget.
+cat >"$HOME/.local/share/applications/wallpaper-studio-cleaner.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Home Cache Cleaner
+Comment=Preview and clean selected application caches
+Exec=$PYTHON -m wallpaper_studio.cleaner --gui
+Icon=edit-clear
+Categories=System;Utility;
+Terminal=false
+DESKTOP
+
 # --- GTK 3 theme --------------------------------------------------------------------
 if [ ! -d "$HOME/.local/share/themes/adw-gtk3" ] && [ ! -d /usr/share/themes/adw-gtk3 ]; then
 	say "Downloading the adw-gtk3 theme ($ADW_GTK3)"
-	mkdir -p "$HOME/.local/share/themes"
+	mkdir -p "$THEME_STORAGE"
 	if curl -fsSL "https://github.com/lassekongo83/adw-gtk3/releases/download/$ADW_GTK3/adw-gtk3${ADW_GTK3}.tar.xz" |
-		tar -xJ -C "$HOME/.local/share/themes"; then
+		tar -xJ -C "$THEME_STORAGE"; then
 		:
 	else
 		echo "Couldn't download adw-gtk3; newer apps will still be recoloured, older ones won't." >&2
 	fi
 fi
+"$PYTHON" -m wallpaper_studio.install_storage link-themes
 
 update-desktop-database -q "$HOME/.local/share/applications" 2>/dev/null || true
 gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
@@ -122,13 +138,13 @@ gtk-update-icon-cache -q -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || tr
 
 # start the helper now, so you don't have to log out; retain diagnostics
 if $START_HELPER; then
-	LOG_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/wallpaper-studio"
 	mkdir -p "$LOG_DIR"
 	(setsid "$DEST/wallpaper-studio" desktop >>"$LOG_DIR/helper.log" 2>&1 &)
 fi
 
 say "Done (using $PYTHON). Open “Wallpaper Studio” from your apps, or run: wallpaper-studio"
 echo "Terminal settings: wallpaper-studio config list (or ws config list)."
+echo "Storage locations: wallpaper-studio paths"
 echo "Optional Bash/Zsh aliases: eval \"\$(wallpaper-studio shell-init)\""
 case ":$PATH:" in
 	*:"$HOME/.local/bin":*) ;;

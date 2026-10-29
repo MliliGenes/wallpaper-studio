@@ -37,7 +37,8 @@ class SettingsTests(unittest.TestCase):
         for key, value in (("mode", "night"), ("glass", "maybe"), ("rotate_hours", "nan"),
                            ("rotate_hours", float("inf")), ("light_from", 24), ("light_from", True),
                            ("awake_interval", 0), ("clock_top", -1), ("clock_format", ""),
-                           ("awake_method", "mouse"), ("typo", 1), ("folder", "/missing/ws-test-folder")):
+                           ("awake_method", "invalid"), ("widget_blur_radius", 65), ("widget_blur", "maybe"),
+                           ("typo", 1), ("folder", "/missing/ws-test-folder")):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 settings.save_config(**{key: value})
         self.assertEqual(Path(self.file).read_text(), before)
@@ -54,6 +55,11 @@ class SettingsTests(unittest.TestCase):
         settings.reset_config("mode")
         self.assertEqual(settings.load_config()["mode"], "auto")
         self.assertTrue(settings.load_config()["glass"])
+
+    def test_old_keep_awake_key_mode_migrates_to_mouse(self):
+        Path(self.file).write_text('{"awake_method": "key"}')
+        self.assertEqual(settings.load_config()["awake_method"], "mouse")
+        self.assertEqual(settings.validate("awake_method", "inhibit"), "inhibit")
 
     def test_day_and_overnight_schedules(self):
         for hour, start, end, expected in ((7, 7, 19, True), (19, 7, 19, False),

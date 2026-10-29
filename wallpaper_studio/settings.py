@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 
 from .storage import BUILT_IN, CONFIG, locked, read_json, write
 
@@ -18,7 +19,13 @@ DEFAULT_CONFIG = {
     "clock_format": "%H:%M",
     "clock_date_format": "%A, %d %B",
     "clock_top": 32,
-    "awake_method": "key",  # GNOME inhibitor plus an XTEST F15 tap; "inhibit" disables taps
+    "widgets_enabled": True,
+    "layout_edit": False,
+    "widget_blur": True,
+    "widget_blur_radius": 24,
+    "logtime_username": "",
+    "logtime_goal": 180,
+    "awake_method": "mouse",  # GNOME inhibitor plus a pointer round trip; "inhibit" disables movement
     "awake_interval": 60,
 }
 
@@ -35,8 +42,14 @@ DESCRIPTIONS = {
     "clock_format": "strftime time format",
     "clock_date_format": "strftime date format; empty hides the date",
     "clock_top": "Clock offset below the primary monitor's work area, in pixels",
-    "awake_method": "key (inhibitor + F15 tap) or inhibit (GNOME only)",
-    "awake_interval": "Seconds between keep-awake taps (10–300)",
+    "widgets_enabled": "Show the desktop widget layout",
+    "layout_edit": "Arrange mode: drag cards, resize the corner or scroll to scale",
+    "widget_blur": "Frosted wallpaper backdrop behind widget cards",
+    "widget_blur_radius": "Wallpaper softening radius in pixels (0–64; 0 disables blur)",
+    "logtime_username": "1337 login for the Logtime widget; empty pauses requests",
+    "logtime_goal": "Target hours per Logtime period (default 180; configurable)",
+    "awake_method": "mouse (inhibitor + pointer round trip) or inhibit (GNOME only)",
+    "awake_interval": "Seconds between keep-awake movements (10–300)",
 }
 
 
@@ -49,30 +62,39 @@ def validate(key, value):
             value = value.lower() in ("true", "on", "1")
         if not isinstance(value, bool):
             raise ValueError(f"{key} must be true or false")
-    elif key in ("light_from", "dark_from", "clock_top", "awake_interval"):
+    elif key in ("light_from", "dark_from", "clock_top", "awake_interval", "widget_blur_radius"):
         if isinstance(value, str):
             try:
                 value = int(value)
             except ValueError:
                 raise ValueError(f"{key} must be an integer") from None
-        lo, hi = (0, 23) if key.endswith("_from") else (10, 300) if key == "awake_interval" else (0, 2000)
+        lo, hi = (0, 23) if key.endswith("_from") else (10, 300) if key == "awake_interval" else (0, 64) if key == "widget_blur_radius" else (0, 2000)
         if type(value) is not int or not lo <= value <= hi:
             raise ValueError(f"{key} must be an integer from {lo} to {hi}")
-    elif key == "rotate_hours":
+    elif key in ("rotate_hours", "logtime_goal"):
         if isinstance(value, str):
             try:
                 value = float(value)
             except ValueError:
-                raise ValueError("rotate_hours must be a nonnegative number") from None
+                raise ValueError(f"{key} must be a number") from None
         if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
-            raise ValueError("rotate_hours must be a nonnegative finite number")
+            raise ValueError(f"{key} must be a nonnegative finite number")
+        if key == "logtime_goal" and not 0 < value <= 10000:
+            raise ValueError("logtime_goal must be greater than 0 and at most 10000 hours")
     else:
         if not isinstance(value, str) or "\0" in value or "\n" in value:
             raise ValueError(f"{key} must be a single-line string")
         if key == "mode" and value not in ("light", "dark", "auto"):
             raise ValueError("mode must be light, dark or auto")
-        if key == "awake_method" and value not in ("key", "inhibit"):
-            raise ValueError("awake_method must be key or inhibit")
+        if key == "logtime_username":
+            value = value.strip()
+            if value and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
+                raise ValueError("logtime_username must contain letters, numbers, underscores or hyphens (1–64 characters)")
+        if key == "awake_method":
+            if value == "key":  # migrate existing preferences from the former F15 implementation
+                value = "mouse"
+            if value not in ("mouse", "inhibit"):
+                raise ValueError("awake_method must be mouse or inhibit")
         if key == "folder":
             value = os.path.abspath(os.path.expanduser(value))
             if not os.path.isdir(value):

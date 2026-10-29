@@ -5,15 +5,20 @@ import json
 import os
 import tempfile
 
+from .paths import paths_for
+
 HOME = os.path.expanduser("~")
+PATHS = paths_for(HOME)
 CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.join(HOME, ".config")), "wallpaper-studio")
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.join(HOME, ".cache")), "wallpaper-studio")
+CACHE_DIR = PATHS.cache
 CONFIG = os.path.join(CONFIG_DIR, "config.json")
 STATE = os.path.join(CONFIG_DIR, "state.json")
 ORIGINALS = os.path.join(CONFIG_DIR, "originals.json")
 THEME_CSS = os.path.join(CONFIG_DIR, "theme.css")
 APP_CSS = os.path.join(CONFIG_DIR, "app.css")
 WIDGETS_CSS = os.path.join(CONFIG_DIR, "widgets.css")
+LAYOUT = os.path.join(CONFIG_DIR, "layout.json")
+CUSTOM_WIDGETS = os.path.join(CONFIG_DIR, "widgets")
 HOOKS = os.path.join(CONFIG_DIR, "hooks")
 LOCK = os.path.join(CONFIG_DIR, ".lock")
 HELPER_LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio.lock")

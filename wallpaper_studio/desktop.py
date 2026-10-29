@@ -31,8 +31,8 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk  # noqa: E402
 
 from . import core  # noqa: E402
-from .awake import KeyTap  # noqa: E402
-from .widgets import DesktopWidgets  # noqa: E402
+from .awake import MouseMotion  # noqa: E402
+from .widget_runtime import DesktopWidgets  # noqa: E402
 
 VLC_SOCKET = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-vlc.sock")
 
@@ -169,7 +169,7 @@ class Desktop:
         self.inhibit_cookie = None   # held while "keep screen awake" is on
         self.awake_timer = 0
         self.pulse_timer = 0
-        self.key_tap = None
+        self.mouse_motion = None
         self.awake_signature = None
         self.warned_session = False
         try:
@@ -218,7 +218,7 @@ class Desktop:
         return False
 
     def on_change(self, _monitor, file, _other, _event):
-        if file.get_basename() not in ("state.json", "config.json", "theme.css", "widgets.css"):
+        if file.get_basename() not in ("state.json", "config.json", "theme.css", "widgets.css", "layout.json"):
             return
         # a change arrives as several file events; act once they settle
         if self.pending:
@@ -253,13 +253,13 @@ class Desktop:
             self.uninhibit()
             return False
         self.inhibit()
-        if config["awake_method"] == "key":
-            if self.key_tap is None:
-                self.key_tap = KeyTap(self.dpy)
-            if self.key_tap.available:
+        if config["awake_method"] == "mouse":
+            if self.mouse_motion is None:
+                self.mouse_motion = MouseMotion(self.dpy)
+            if self.mouse_motion.available:
                 if (self.session is None or self.session.get_cached_property("Active") is None
                         or self.session.get_cached_property("LockedHint") is None) and not self.warned_session:
-                    logging.getLogger(__name__).warning("Cannot confirm session lock state; key taps disabled until logind reports it")
+                    logging.getLogger(__name__).warning("Cannot confirm session lock state; mouse movement disabled until logind reports it")
                     self.warned_session = True
                 self.pulse_timer = GLib.timeout_add_seconds(config["awake_interval"], self.pulse_awake)
                 self.pulse_awake()
@@ -277,7 +277,7 @@ class Desktop:
             active = self.session.get_cached_property("Active")
             locked = self.session.get_cached_property("LockedHint")
             if active is not None and active.unpack() and locked is not None and not locked.unpack():
-                self.key_tap.pulse()
+                self.mouse_motion.pulse()
         return True
 
     def session_manager(self):

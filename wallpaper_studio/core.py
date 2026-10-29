@@ -27,11 +27,9 @@ from .storage import (HOME, CONFIG_DIR, CACHE_DIR, CONFIG, STATE, ORIGINALS, THE
                       APP_CSS, WIDGETS_CSS, HOOKS, LOCK, HELPER_LOCK, AWAKE, BUILT_IN,
                       read_json as _read_json, write as _write, locked)
 from .settings import DEFAULT_CONFIG, load_config, save_config, is_light_hour
+from .media import IMAGE_EXT, VIDEO_EXT, is_video, is_wallpaper, wallpapers
 
 FOREVER = -1
-
-IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp", ".jxl", ".bmp", ".tif", ".tiff", ".gif")
-VIDEO_EXT = (".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi")
 
 # settings we touch, saved once before the first change so Restore can put them back
 TOUCHED = [
@@ -42,14 +40,6 @@ TOUCHED = [
 ]
 TERMINAL = "/org/gnome/terminal/legacy/profiles:"
 CSS_IMPORT = '@import url("file://{}"); /* wallpaper-studio */\n'
-
-
-def is_video(path):
-    return bool(path) and path.lower().endswith(VIDEO_EXT)
-
-
-def is_wallpaper(path):
-    return path.lower().endswith(IMAGE_EXT + VIDEO_EXT)
 
 
 # --- files ------------------------------------------------------------------------
@@ -89,7 +79,7 @@ def awake_minutes():
 def keep_awake(minutes):
     """Stop the screen locking from idleness for this many minutes (FOREVER: until turned off, None: off now).
 
-    The helper holds GNOME's inhibitor and optionally sends XTEST F15 taps; it ends at logout."""
+    The helper holds GNOME's inhibitor and optionally moves the pointer to (0, 0) and back through XTEST; it ends at logout."""
     if minutes is not None and (type(minutes) is not int or (minutes <= 0 and minutes != FOREVER)):
         raise ValueError("keep-awake duration must be a positive number of minutes")
     until = None if minutes is None else FOREVER if minutes == FOREVER else time.time() + minutes * 60
@@ -193,16 +183,6 @@ def set_wallpaper(path):
     with locked():
         _save_state({"wallpaper": path, "still": still, "palette": pal, "changed": time.time()})
     apply_theme()
-
-
-def wallpapers(folder=None):
-    folder = folder or load_config()["folder"]
-    try:
-        names = sorted(os.listdir(folder), key=str.lower)
-    except OSError:
-        return []
-    return [os.path.join(folder, n) for n in names
-            if not n.startswith(".") and is_wallpaper(n) and os.path.isfile(os.path.join(folder, n))]
 
 
 def next_wallpaper():
@@ -385,7 +365,7 @@ def _run_hooks(p, mode):
 
 def restore():
     """Put back every setting as it was before Wallpaper Studio, and take the wallpaper away."""
-    save_config(clock=False)
+    save_config(clock=False, widgets_enabled=False, layout_edit=False)
     _write(AWAKE, json.dumps({"until": None, "minutes": None}) + "\n")
     with locked():
         saved = _read_json(ORIGINALS, None)
