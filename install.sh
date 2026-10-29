@@ -30,6 +30,9 @@ PY
 import gi, cairo
 gi.require_version("Gtk", "3.0"); gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gtk, GdkPixbuf
+loader = GdkPixbuf.PixbufLoader.new_with_type("svg")
+loader.write(b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>')
+loader.close()
 PY2
 }
 PYTHON=
@@ -40,9 +43,9 @@ for candidate in /usr/bin/python3 "$(command -v python3 || true)" /usr/local/bin
 	if has_gtk "$candidate"; then PYTHON=$candidate; break; fi
 done
 if [ -z "$PYTHON" ]; then
-	echo "Wallpaper Studio needs a Python with GTK 4 and libadwaita, and none was found." >&2
+	echo "Wallpaper Studio needs Python with GTK 3/4, libadwaita and SVG image support; no suitable interpreter was found." >&2
 	echo "Tried: ${tried[*]:-no python3 at all}" >&2
-	echo "On Ubuntu: python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gtk-4.0 and gir1.2-adw-1." >&2
+	echo "On Ubuntu: python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-gtk-4.0, gir1.2-adw-1 and librsvg2-common." >&2
 	exit 1
 fi
 if [ "${XDG_SESSION_TYPE:-x11}" != x11 ]; then
@@ -68,6 +71,7 @@ say "Installing to $APP_STORAGE"
 # stop this install's background helper (and one started by an older version) before replacing it
 HELPER=$("$PYTHON" -m wallpaper_studio.install_storage helper-pattern)
 pkill -f "$HELPER" 2>/dev/null || true
+pkill -f "$DEST/wallpaper-studio lock" 2>/dev/null || true
 for _ in $(seq 50); do pgrep -f "$HELPER" >/dev/null || break; sleep 0.1; done   # let it let go first
 "$PYTHON" -m wallpaper_studio.install_storage install --source "$PWD" --python "$PYTHON"
 mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications" \

@@ -87,7 +87,7 @@ machine where you have administrator access, install missing dependencies with:
 ```sh
 sudo apt install python3-gi python3-cairo python3-gi-cairo python3-venv \
   gir1.2-gtk-3.0 gir1.2-gtk-4.0 gir1.2-adw-1 gir1.2-gdkpixbuf-2.0 \
-  libx11-6 libxtst6 dconf-cli uuid-runtime
+  librsvg2-common libx11-6 libxtst6 dconf-cli uuid-runtime
 ```
 
 On the school iMacs, these may already be provided; launching the app does not require
@@ -275,11 +275,11 @@ and TUI, including custom widgets added to the layout.
 Cards use the wallpaper palette with translucent glass, accent highlights, softened
 wallpaper backdrops and drop shadows. Toggle **Frosted widget glass** in the GUI/TUI,
 or use `ws config set widget_blur false`. Adjust strength with
-`ws config set widget_blur_radius 24` (0–64). The blur is sampled from the wallpaper;
+`ws config set widget_blur_radius 24` (0–64). The Gaussian blur is sampled from the wallpaper;
 videos use their poster frame. It does not require a compositor extension.
 
 ```sh
-ws layout edit        # drag cards; resize the lower-right corner or scroll to scale
+ws layout edit        # drag inside to move; resize any edge/corner; scroll to scale text
 ws layout done        # finish arranging; only widget buttons accept clicks
 ws layout list
 ws layout toggle calendar

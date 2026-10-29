@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     "glass": False,
     "terminal": True,
     "lock_screen": True,
+    "lock_password": "",
     "clock": True,
     "clock_format": "%H:%M",
     "clock_date_format": "%A, %d %B",
@@ -41,17 +42,18 @@ DESCRIPTIONS = {
     "glass": "Transparent app windows",
     "terminal": "Recolour GNOME Terminal",
     "lock_screen": "Update the lock-screen picture",
+    "lock_password": "Password for Wallpaper Studio's optional lock overlay (empty disables it)",
     "clock": "Show the desktop clock",
     "clock_format": "strftime time format",
     "clock_date_format": "strftime date format; empty hides the date",
     "clock_top": "Clock offset below the primary monitor's work area, in pixels",
     "widgets_enabled": "Show the desktop widget layout",
-    "layout_edit": "Arrange mode: drag cards, resize the corner or scroll to scale",
+    "layout_edit": "Arrange mode: drag inside to move, resize any edge/corner, scroll to scale text",
     "layout_grid": "Snap widget positions and sizes to the grid",
     "layout_grid_size": "Grid cell size in pixels (8–128)",
     "layout_grid_gap": "Space between grid cells in pixels (0–64)",
     "widget_blur": "Frosted wallpaper backdrop behind widget cards",
-    "widget_blur_radius": "Wallpaper softening radius in pixels (0–64; 0 disables blur)",
+    "widget_blur_radius": "Gaussian blur strength in wallpaper pixels (0–64; 0 disables blur)",
     "logtime_username": "1337 login for the Logtime widget; empty pauses requests",
     "logtime_goal": "Target hours per Logtime period (default 180; configurable)",
     "awake_method": "mouse (inhibitor + pointer round trip) or inhibit (GNOME only)",
@@ -96,6 +98,8 @@ def validate(key, value):
             value = value.strip()
             if value and not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", value):
                 raise ValueError("logtime_username must contain letters, numbers, underscores or hyphens (1–64 characters)")
+        if key == "lock_password" and len(value) > 128:
+            raise ValueError("lock_password must be at most 128 characters")
         if key == "awake_method":
             if value == "key":  # migrate existing preferences from the former F15 implementation
                 value = "mouse"

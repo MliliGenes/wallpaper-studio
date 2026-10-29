@@ -1,5 +1,5 @@
 """Now-playing card using the same scoped models and controls as other widgets."""
-from ..components import Button, Column, Image, Row, Text, component, use_model
+from ..components import IconButton, Column, Image, Row, Text, component, use_model
 from ..artwork import ArtworkModel
 from ..now_playing import NowPlayingModel, PREFIX, can_control
 
@@ -24,12 +24,12 @@ def NowPlaying(config):
         Text(artist, visible=bool(artist), wrap=True, max_width_chars=28, key="artist"),
         Text(album, visible=bool(album), wrap=True, max_width_chars=28,
              class_name="media-detail", key="album"),
-        Row(*(Button(symbol, tooltip=label, class_name="media-control", on_click=lambda method=method: model.control(method),
+        Row(*(IconButton(icon, label=label, class_name="media-control", on_click=lambda method=method: model.control(method),
                      sensitive=not busy and can_control(player, method), expand=True, key=method)
-              for method, symbol, label in (("Previous", "<<", "Previous"),
-                                    ("PlayPause", "||" if status == "Playing" else ">",
+              for method, icon, label in (("Previous", "backward-step", "Previous"),
+                                    ("PlayPause", "pause" if status == "Playing" else "play",
                                      "Pause" if status == "Playing" else "Play"),
-                                    ("Next", ">>", "Next"))), spacing=8),
+                                    ("Next", "forward-step", "Next"))), spacing=8),
         Text(error or (f"{source} · {status}" if status else source), wrap=True,
              max_width_chars=28, class_name="media-detail", key="status"),
         spacing=8, class_name="media-card",

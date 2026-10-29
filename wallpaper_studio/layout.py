@@ -31,6 +31,8 @@ class Placement:
     class_name: str = ""
     props: dict = field(default_factory=dict)
     scale: float = 1
+    width: object = None
+    height: object = None
 
 
 def parse_layout(document):
@@ -61,6 +63,10 @@ def parse_layout(document):
                 continue
             if type(value) is not int or not -20000 <= value <= 20000:
                 raise ValueError(f"Widget {name} must be an integer between -20000 and 20000")
+        for name in ("width", "height"):
+            value = getattr(placement, name)
+            if value is not None and (type(value) is not int or not 1 <= value <= 20000):
+                raise ValueError(f"Widget {name} must be null or an integer between 1 and 20000")
         if type(placement.enabled) is not bool:
             raise ValueError("Widget enabled must be true or false")
         if type(placement.scale) not in (int, float) or not math.isfinite(placement.scale) or not .5 <= placement.scale <= 2.5:
@@ -181,12 +187,42 @@ def grid_coordinate(value, extent, available, cell, gap):
     return gap + max(0, min(last, index)) * pitch
 
 
-def grid_scale(scale, width, height, dx, dy, cell, gap):
-    """Resize uniformly, snapping the dominant edge to a whole grid span."""
-    size, delta = (width, dx) if abs(dx / width) >= abs(dy / height) else (height, dy)
-    pitch = cell + gap
-    cells = max(1, math.floor((size + delta + gap) / pitch + .5))
-    return max(.5, min(2.5, scale * (cells * pitch - gap) / size))
+def resize_edges(x, y, width, height, border=10):
+    """Eight resize directions, or an empty string for the draggable interior."""
+    if not (0 <= x < width and 0 <= y < height):
+        return ""
+    horizontal = "w" if x < min(border, width / 2) else "e" if x >= max(width / 2, width - border) else ""
+    vertical = "n" if y < min(border, height / 2) else "s" if y >= max(height / 2, height - border) else ""
+    return vertical + horizontal
+
+
+def resize_rectangle(rect, dx, dy, edges, minimum, area, cell=None, gap=0):
+    """Resize selected edges only; keep opposite edges fixed and honour content limits."""
+    def axis(start, size, delta, leading, trailing, lower, bound):
+        lower = max(1, lower)
+        if cell is not None:
+            lower = grid_extent(lower, cell, gap)
+        if not leading and not trailing:
+            return start, max(size, lower)
+        wanted = size + (-delta if leading else delta)
+        fixed = start + size if leading else start
+        upper = fixed - gap if leading else bound - gap - fixed
+        if cell is not None:
+            pitch = cell + gap
+            wanted = max(1, math.floor((wanted + gap) / pitch + .5)) * pitch - gap
+            upper = math.floor((upper + gap) / pitch) * pitch - gap
+        extent = round(max(lower, min(max(lower, upper), wanted)))
+        return max(0, fixed - extent) if leading else start, extent
+    x, y, width, height = rect
+    x, width = axis(x, width, dx, "w" in edges, "e" in edges, minimum[0], area[0])
+    y, height = axis(y, height, dy, "n" in edges, "s" in edges, minimum[1], area[1])
+    return x, y, width, height
+
+
+def widget_geometry(placement):
+    width = str(placement.width) if placement.width is not None else "auto"
+    height = str(placement.height) if placement.height is not None else "auto"
+    return f"{placement.anchor} · {width} × {height} px · {placement.scale:g}× text"
 
 
 class ComponentLoader:

@@ -6,9 +6,10 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, PangoCairo  # noqa: E402
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Pango, PangoCairo  # noqa: E402
 
 from .components import resolve  # noqa: E402
+from .gtk_icons import SvgIcon  # noqa: E402
 
 
 @dataclass
@@ -109,6 +110,8 @@ class Renderer:
         if mounted is None:
             if element.kind in ("column", "row"):
                 widget = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if element.kind == "column" else Gtk.Orientation.HORIZONTAL)
+            elif element.kind == "icon":
+                widget = SvgIcon(element.props["name"])
             elif element.kind == "image":
                 widget = Gtk.DrawingArea()
                 widget.artwork = None
@@ -159,6 +162,10 @@ class Renderer:
             widget.set_visible(props["visible"])
             if element.kind in ("column", "row"):
                 widget.set_spacing(props["spacing"])
+            elif element.kind == "icon":
+                widget.set_icon_name(props["name"])
+                widget.set_tooltip_text(props["label"] or None)
+                widget.get_accessible().set_name(props["label"])
             elif element.kind == "image":
                 if props["data"] != previous.get("data"):
                     widget.artwork = None
@@ -180,11 +187,27 @@ class Renderer:
             elif element.kind == "text":
                 widget.set_text(props["text"])
                 widget.set_line_wrap(props["wrap"])
+                widget.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
                 widget.set_max_width_chars(props["max_width_chars"])
                 widget.set_xalign({"start": 0.0, "center": 0.5, "end": 1.0, "fill": 0.5}[props["align"]])
             elif element.kind == "button":
-                if props["text"] != previous.get("text"):
-                    widget.get_child().set_text(props["text"])
+                child = widget.get_child()
+                if props["icon"] is not None:
+                    if not isinstance(child, SvgIcon):
+                        child.destroy()
+                        child = SvgIcon(props["icon"])
+                        widget.add(child)
+                        child.show()
+                    else:
+                        child.set_icon_name(props["icon"])
+                else:
+                    if not isinstance(child, Gtk.Label):
+                        child.destroy()
+                        child = Gtk.Label()
+                        widget.add(child)
+                        child.show()
+                    child.set_text(props["text"])
+                if (props["text"], props["icon"]) != (previous.get("text"), previous.get("icon")):
                     widget.queue_resize()
                     if widget.get_realized():
                         widget.size_allocate(widget.get_allocation())

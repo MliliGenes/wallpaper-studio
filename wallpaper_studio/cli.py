@@ -18,6 +18,7 @@ def parser():
         "status": "Print configuration, wallpaper state and awake request as JSON",
         "shell-init": "Print optional Bash/Zsh aliases",
         "tui": "Open the interactive terminal control panel",
+        "lock": "Show Wallpaper Studio's themed lock overlay",
         "paths": "Show installation, cache and configuration locations",
     }.items():
         commands.add_parser(name, help=help_text)
@@ -56,6 +57,12 @@ def main(argv=None):
         if command == "tui":
             from . import tui
             return tui.main()
+        if command == "lock":
+            from . import lockscreen
+            if not settings.load_config().get("lock_password"):
+                raise ValueError("set config lock_password before locking")
+            lockscreen.run()
+            return 0
         if command == "paths":
             print(json.dumps({"app": storage.PATHS.app, "cache": storage.CACHE_DIR,
                               "config": storage.CONFIG_DIR, "themes": storage.PATHS.themes,
@@ -92,7 +99,7 @@ def main(argv=None):
                     settings.save_config(layout_edit=False)
                 apply_config()
                 print("Layout reset." if args.action == "reset" else
-                      "Arrange mode on: drag cards, drag the bottom-right corner or scroll to resize." if args.action == "edit" else
+                      "Arrange mode on: drag inside to move, drag any edge/corner to resize, scroll to scale text." if args.action == "edit" else
                       "Arrange mode off; desktop widgets are click-through.")
             return 0
         if command == "config":

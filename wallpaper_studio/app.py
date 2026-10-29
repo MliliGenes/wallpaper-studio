@@ -196,7 +196,7 @@ class Window(Adw.ApplicationWindow):
         widgets = Adw.PreferencesGroup(title="Desktop widgets",
                                        description="Each widget has its own switch. Arrange cards on the desktop or style them in widgets.css.")
         widgets.add(self.switch_row("Show desktop widgets", "Clock, calendar, system stats, notes, Logtime, Cleaner and now playing", "widgets_enabled"))
-        widgets.add(self.switch_row("Arrange widgets", "Drag cards; resize the bottom-right corner or scroll to scale", "layout_edit"))
+        widgets.add(self.switch_row("Arrange widgets", "Drag inside to move; drag any edge/corner to resize; scroll to scale text", "layout_edit"))
         widgets.add(self.switch_row("Snap to grid", "Align card positions and sizes, with gaps between cells", "layout_grid"))
         self.grid_spins = {}
         for key, title, lower, upper in (("layout_grid_size", "Grid cell size (px)", 8, 128),
@@ -210,6 +210,21 @@ class Window(Adw.ApplicationWindow):
             self.grid_spins[key] = spin
             widgets.add(row)
         widgets.add(self.switch_row("Frosted widget glass", "Blur the wallpaper behind translucent cards", "widget_blur"))
+        blur_row = Adw.ActionRow(title="Glass blur strength", subtitle="Gaussian blur · 0 = off · 64 = strongest")
+        self.blur_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 64, 1)
+        self.blur_scale.set_digits(0)
+        self.blur_scale.set_round_digits(0)
+        self.blur_scale.set_draw_value(True)
+        self.blur_scale.set_size_request(180, -1)
+        self.blur_scale.set_valign(Gtk.Align.CENTER)
+        self.blur_scale.set_tooltip_text("Gaussian blur strength in wallpaper pixels")
+        self.blur_scale.set_value(self.config["widget_blur_radius"])
+        self.blur_scale.set_sensitive(self.config["widget_blur"])
+        self.blur_scale.connect("value-changed", lambda scale: self.save(widget_blur_radius=round(scale.get_value())))
+        self.switches["widget_blur"].connect("notify::active", lambda switch, _param:
+                                           self.blur_scale.set_sensitive(switch.get_active()))
+        blur_row.add_suffix(self.blur_scale)
+        widgets.add(blur_row)
         self.widget_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         widgets.add(self.widget_rows)
         self.load_widget_rows()
@@ -248,10 +263,32 @@ class Window(Adw.ApplicationWindow):
         method.connect("notify::selected", lambda c, _p: self.save(awake_method="mouse" if c.get_selected() == 0 else "inhibit"))
         self.awake_method_combo = method
         screen.add(method)
+        password = Adw.ActionRow(title="Lock-screen password", subtitle="Leave empty to disable the themed lock overlay")
+        password_entry = Gtk.Entry(text=self.config["lock_password"], visibility=False, placeholder_text="Password",
+                                   valign=Gtk.Align.CENTER, width_chars=18)
+        password_entry.connect("activate", lambda entry: self.save(lock_password=entry.get_text()))
+        password.add_suffix(password_entry)
+        self.lock_password_entry = password_entry
+        screen.add(password)
+        lock_now = Gtk.Button(label="Lock now", css_classes=["pill"], valign=Gtk.Align.CENTER)
+        lock_now.set_tooltip_text("Show the themed lock screen")
+        lock_now.connect("clicked", lambda *_: self.lock_now())
+        lock_row = Adw.ActionRow(title="Lock screen now", subtitle="Requires a non-empty lock-screen password")
+        lock_row.add_suffix(lock_now)
+        screen.add(lock_row)
         box.append(screen)
         self.show_awake()
         GLib.timeout_add_seconds(30, self.show_awake)     # count down, and notice when it runs out
         return box
+
+    def lock_now(self):
+        if not self.config.get("lock_password"):
+            self.toasts.add_toast(Adw.Toast(title="Set a lock-screen password first"))
+            return
+        import subprocess
+        subprocess.Popen([os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "wallpaper-studio")), "lock"],
+                         start_new_session=True)
+
 
     def on_awake(self, row, _param):
         if self.showing_awake:
@@ -276,7 +313,7 @@ class Window(Adw.ApplicationWindow):
             return
         for placement in placements:
             row = Adw.ActionRow(title=layout.widget_title(placement),
-                                subtitle=f"{placement.anchor} · {placement.scale:g}× scale")
+                                subtitle=layout.widget_geometry(placement))
             switch = Gtk.Switch(active=layout.widget_enabled(placement, self.config), valign=Gtk.Align.CENTER)
             switch.connect("notify::active", self.on_widget_toggle, placement.id)
             row.add_suffix(switch)
@@ -360,6 +397,7 @@ class Window(Adw.ApplicationWindow):
                 button.set_active(self.config["mode"] == mode)
             for key, switch in self.switches.items():
                 switch.set_active(self.config[key])
+            self.blur_scale.set_value(self.config["widget_blur_radius"])
             for key, spin in self.grid_spins.items():
                 spin.set_value(self.config[key])
             for key, entry in self.logtime_entries.items():
@@ -367,6 +405,7 @@ class Window(Adw.ApplicationWindow):
                     entry.set_text(str(self.config[key]))
             self.update_rotation()
             self.awake_method_combo.set_selected(0 if self.config["awake_method"] == "mouse" else 1)
+            self.lock_password_entry.set_text(self.config["lock_password"])
             self.mode_row.set_subtitle(f"Auto is light from {self.config['light_from']:02d}:00 "
                                        f"and dark from {self.config['dark_from']:02d}:00")
         finally:

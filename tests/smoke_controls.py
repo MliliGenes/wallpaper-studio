@@ -66,10 +66,23 @@ def main():
                 window.widget_toggles["calendar"].set_active(True)
                 wait(lambda: layout.load_layout()[1].enabled)
                 assert not layout.load_layout()[0].enabled
+                assert window.blur_scale.get_value() == settings.load_config()["widget_blur_radius"]
+                for radius in (0, 64, 32):
+                    window.blur_scale.set_value(radius)
+                    wait(lambda: settings.load_config()["widget_blur_radius"] == radius)
+                settings.save_config(widget_blur_radius=17)
+                with patch.object(app.core, "save_config", wraps=app.core.save_config) as save:
+                    window.sync_from_disk()
+                    assert window.blur_scale.get_value() == 17
+                    save.assert_not_called()
                 window.switches["widget_blur"].set_active(False)
                 wait(lambda: settings.load_config()["widget_blur"] is False)
+                assert not window.blur_scale.get_sensitive()
+                assert settings.load_config()["widget_blur_radius"] == 17
                 window.switches["widget_blur"].set_active(True)
                 wait(lambda: settings.load_config()["widget_blur"] is True)
+                assert window.blur_scale.get_sensitive()
+                assert window.blur_scale.get_value() == 17
             finally:
                 window.widget_pool.shutdown(wait=True)
                 window.pool.shutdown(wait=True)

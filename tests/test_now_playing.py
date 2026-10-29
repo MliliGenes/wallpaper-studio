@@ -47,7 +47,8 @@ class NowPlayingTests(unittest.TestCase):
         self.assertEqual(tree.children[3].props["text"], "A, B")
         buttons = tree.children[5].children
         self.assertFalse(buttons[0].props["sensitive"])
-        self.assertEqual(buttons[1].props["text"], "||")
+        self.assertEqual(buttons[1].props["icon"], "pause")
+        self.assertEqual(buttons[1].props["tooltip"], "Pause")
         buttons[2].props["on_click"]()
         self.assertEqual(model.method, "Next")
         model.view = lambda: (None, "", False)

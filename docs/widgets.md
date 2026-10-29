@@ -1,7 +1,7 @@
 # Desktop widgets and customization
 
 The desktop is one transparent GTK layout. Its cards share a stylesheet, but each has
-its own component, position, scale, props and on/off switch. The built-in cards are
+its own component, position, width, height, text scale, props and on/off switch. The built-in cards are
 **Clock**, **Calendar**, **System stats** (actual CPU, memory and disk usage), **Notes**, **Logtime**, **Cleaner**, and **Now playing**.
 
 ## Arrange cards on the desktop
@@ -13,14 +13,16 @@ ws layout edit
 ```
 
 - Drag a card to move it; it snaps to the grid while you drag.
-- Drag its lower-right corner to resize it, or scroll over it to change its scale.
-  Both resize controls snap the card’s footprint to whole grid cells.
+- Drag any side edge to change width or height; drag a corner to change both.
+  Eight handles and resize cursors appear in arrange mode. The opposite edge stays put.
+- Scroll over a card to change its text/content scale independently of its box size.
 - Positions and sizes are saved when you release the card. Scale ranges from 0.5 to 2.5.
 
 **Snap to grid** is enabled by default, with 32-pixel cells and 8-pixel gaps. Cards can
 span several cells; adjacent spans leave the configured gap. Dotted guides appear only
-in arrange mode. Content keeps its proportions as it scales, with spare space inside the
-card so both outer dimensions align with the grid. Positions stay within the work area
+in arrange mode. Resizing the box keeps text size unchanged. Text that supports wrapping
+reflows to the chosen width; the card stops shrinking at its content minimum so controls
+stay visible. When narrowing adds text lines, the minimum height may increase. Positions stay within the work area
 when the card fits; oversized content is kept at the nearest visible edge.
 
 The GUI’s **Desktop widgets** group and TUI’s **Widgets** panel expose **Snap to grid**,
@@ -34,7 +36,7 @@ ws config set layout_grid_gap 8
 
 Cell size accepts 8–128 pixels; spacing accepts 0–64. Grid settings apply to the entire
 layout. Existing placements are displayed at the nearest grid position; dragging saves
-that snapped position. Turn **Snap to grid** off for free movement and continuous corner
+that snapped position. Turn **Snap to grid** off for free movement and continuous edge/corner
 resizing. This is an alignment grid, not automatic packing: dragging cards onto occupied
 cells can still overlap them.
 
@@ -128,6 +130,21 @@ offsets move right/down. Cards are kept within the work area. Dragging saves a `
 anchor with pixel offsets. If a Clock entry omits `y`, it uses the existing `clock_top`
 preference. An explicit `y` overrides that preference.
 
+Optional `width` and `height` set the card’s box dimensions in pixels, independently of
+`scale` (which controls text, icons, and content). Border resizing saves both dimensions;
+dragging the interior only changes position. The GUI and TUI show the saved dimensions.
+Omit a dimension or set it to `null` to fit the content automatically again. Existing
+layouts without these fields continue to fit their contents. For example:
+
+```json
+{"id": "notes", "component": "Notes", "anchor": "top-left", "x": 48, "y": 48,
+ "width": 272, "height": 192, "scale": 1}
+```
+
+Explicit sizes still respect content minimums and grid spacing. Reduce text scale if you
+need a card smaller than its controls or artwork allow. Scaling text does not change a
+saved box size unless its content needs more room.
+
 `enabled` defaults to true, `scale` to 1, offsets to zero, and props to an empty object.
 The global `config` prop is supplied automatically. Multiple instances can use the same
 component with different IDs and props.
@@ -144,7 +161,7 @@ layouts that have been customized.
 ## Now playing
 
 The `NowPlaying` card shows the title, artist, album, player and playback status, with
-compact << / > or || / >> buttons, with tooltips and accessible labels. Album artwork
+compact Font Awesome SVG playback buttons, with tooltips and accessible labels. Album artwork
 comes from the player’s `mpris:artUrl` (local files or HTTP/HTTPS); a music-note placeholder
 is shown when unavailable. Artwork loads in its own worker, with a 5 MiB limit, and stale
 results are discarded when the track changes. It reads the session bus through Gio using MPRIS;
@@ -220,7 +237,10 @@ copy of the wallpaper is drawn behind each card with the same rounded shape as i
 The sampled area follows the card while dragging, so the frosted backdrop stays aligned
 with the wallpaper.
 
-Use **Frosted widget glass** in the GUI/TUI, or:
+In the GUI’s **Desktop widgets** group, enable **Frosted widget glass**, then adjust
+**Glass blur strength** from 0 to 64. Changes save automatically and update the desktop.
+Turning the effect off disables the slider but remembers its value. The TUI offers
+**Glass blur radius**, or use:
 
 ```sh
 ws config set widget_blur true
@@ -228,10 +248,13 @@ ws config set widget_blur_radius 24
 ws config set widget_blur false
 ```
 
-The radius ranges from 0 to 64; 0 disables blur. This is a wallpaper-backed effect, not
+The strength ranges from 0 to 64 and sets the Gaussian standard deviation in wallpaper
+pixels; 0 disables blur. This is a wallpaper-backed effect, not
 compositor blur of arbitrary windows: video wallpapers use their cached poster frame.
 When a wallpaper cannot be read, cards fall back to translucent, palette-tinted surfaces.
-The softened image is cached at a small resolution and refreshed only when its source,
+A normalized Gaussian filter smooths the image horizontally and vertically, with padded
+edges to prevent dark borders. The working image is capped at 640 pixels on its longest
+side and uses finer sampling at lower strengths. The result is cached and refreshed only when its source,
 screen dimensions or blur settings change. No GNOME extension or extra pip dependency
 is needed.
 
@@ -323,6 +346,8 @@ Available elements:
 | `Text(text)` | Label | `wrap`, `max_width_chars` |
 | `Progress(value)` | Progress bar | Fraction 0..1, optional `text` |
 | `Button(text)` | Button | `on_click` callback, `sensitive`, `tooltip` |
+| `Icon(name)` | SVG drawing area | Bundled icon name, optional accessible `label` |
+| `IconButton(name)` | Button + SVG icon | Required `label` and `on_click`, optional `sensitive` |
 | `Image(data)` | Drawing area | Encoded image bytes or `None` for a placeholder; CSS size in `em` |
 | `Ring(value, *children)` | Drawing area + overlay | Fraction 0..1, children inside the arc |
 
@@ -331,6 +356,49 @@ Lists are flattened; `None` and `False` children are skipped. A component may re
 The runtime refreshes once per second and updates native widgets in place, preserving
 keyed children when reordered. Keep component functions fast: fetch network data in a
 provider and render cached results. Don't perform blocking network calls inside render functions.
+
+### SVG icons
+
+The widgets ship with 24 **Font Awesome Free 6.7.2** solid SVG icons. They work offline
+and use the same CSS color, disabled states and scaling as the surrounding widget.
+No icon font, JavaScript, CDN or pip package is needed. GTK’s GdkPixbuf SVG loader
+(provided by librsvg on the supported desktop setup) renders them at the display scale.
+
+```python
+from wallpaper_studio.components import Icon, IconButton, Row
+
+Row(
+    Icon("music", label="Music"),
+    IconButton("play", label="Play", on_click=model.play),
+    IconButton("pause", label="Pause", on_click=model.pause),
+    spacing=8,
+)
+```
+
+`IconButton` labels become tooltips and accessible names, rather than visible text.
+Existing text buttons still work unchanged. A `Button("Play", icon="play", ...)` is
+also supported for switching a keyed button between text and icon presentation.
+
+List the available names without importing GTK:
+
+```python
+from wallpaper_studio.icons import available_icons
+print(available_icons())
+```
+
+Included: `play`, `pause`, `stop`, `backward-step`, `forward-step`, `volume-high`,
+`volume-xmark`, `music`, `shuffle`, `repeat`, `clock`, `calendar`, `note-sticky`,
+`chart-simple`, `gear`, `rotate-right`, `trash`, `plus`, `minus`, `xmark`, `check`,
+`arrows-up-down-left-right`, `expand`, and `image`.
+
+Use `.widget-icon { min-width: 1.1em; min-height: 1.1em; }` to size icons. They inherit
+`color` from the button/card. Add further Free solid SVGs to
+`wallpaper_studio/assets/fontawesome/solid/`, retaining upstream attribution, then
+reinstall/restart. SVG filenames are the icon names; unknown names produce a clear error.
+
+[Font Awesome Free](https://github.com/FortAwesome/Font-Awesome/tree/6.7.2) SVGs are
+licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Upstream license
+and attribution files are bundled in `assets/fontawesome/`; source SVGs are unmodified.
 
 For a stateful card, use `model = use_model(MyModel, key="my-data")` inside your component
 (import it from `wallpaper_studio.components`). The runtime creates the model once per
@@ -379,6 +447,7 @@ panel uses GTK 4/libadwaita in a separate process.
 /usr/bin/python3 -m unittest discover -s tests -v
 /usr/bin/python3 tests/smoke_widgets.py     # GTK 3 display required
 /usr/bin/python3 tests/smoke_controls.py    # GTK 4 display required
+/usr/bin/python3 tests/run_pointer_smoke.py # isolated Xephyr display; X11 + libXtst required
 ```
 
 Check window stacking, desktop-icon clicks, live dragging/resizing, monitor changes,

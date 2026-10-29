@@ -63,15 +63,49 @@ class LayoutTests(unittest.TestCase):
         self.assertEqual(layout.grid_coordinate(100, 2000, 1000, 32, 8), 0)
         self.assertEqual(layout.grid_extent(64, 32, 0), 64)
 
-    def test_grid_resize_snaps_both_directions_and_clamps_scale(self):
-        self.assertEqual(layout.grid_scale(1, 232, 152, 5, 0, 32, 8), 1)
-        self.assertAlmostEqual(layout.grid_scale(1, 232, 152, 40, 0, 32, 8), 272 / 232)
-        self.assertAlmostEqual(layout.grid_scale(1, 232, 152, 0, -40, 32, 8), 112 / 152)
-        self.assertEqual(layout.grid_scale(1, 232, 152, 10000, 0, 32, 8), 2.5)
-        self.assertEqual(layout.grid_scale(1, 232, 152, -10000, 0, 32, 8), .5)
+    def test_resize_hit_testing_covers_all_edges_and_corners(self):
+        points = {"nw": (2, 2), "n": (100, 2), "ne": (198, 2), "w": (2, 60),
+                  "e": (198, 60), "sw": (2, 118), "s": (100, 118), "se": (198, 118)}
+        for edges, point in points.items():
+            self.assertEqual(layout.resize_edges(*point, 200, 120), edges)
+        self.assertEqual(layout.resize_edges(100, 60, 200, 120), "")
+        self.assertEqual(layout.resize_edges(-1, 60, 200, 120), "")
+
+    def test_independent_resize_preserves_opposite_edges(self):
+        rect = (100, 100, 300, 200)
+        for edges in ("n", "s", "e", "w", "nw", "ne", "sw", "se"):
+            with self.subTest(edges=edges):
+                x, y, w, h = layout.resize_rectangle(rect, 30, 20, edges, (60, 40), (1000, 800))
+                self.assertEqual(w, 270 if "w" in edges else 330 if "e" in edges else 300)
+                self.assertEqual(h, 180 if "n" in edges else 220 if "s" in edges else 200)
+                self.assertEqual(x + w, 430 if "e" in edges else 400)
+                self.assertEqual(y + h, 320 if "s" in edges else 300)
+
+    def test_grid_resize_limits_content_and_work_area(self):
+        rect = (88, 88, 232, 152)
+        self.assertEqual(layout.resize_rectangle(rect, 45, 0, "e", (100, 50), (1000, 800), 32, 8),
+                         (88, 88, 272, 152))
+        self.assertEqual(layout.resize_rectangle(rect, 1000, 1000, "nw", (100, 50), (1000, 800), 32, 8),
+                         (208, 168, 112, 72))
+        x, y, w, h = layout.resize_rectangle(rect, 10000, 10000, "se", (100, 50), (1000, 800), 32, 8)
+        self.assertLessEqual(x + w + 8, 1000)
+        self.assertLessEqual(y + h + 8, 800)
+        self.assertEqual((w + 8) % 40, 0)
+        self.assertEqual((h + 8) % 40, 0)
+
+    def test_dimensions_roundtrip_without_changing_scale(self):
+        layout.save_placement("notes", width=250, height=180)
+        entry = next(p for p in layout.load_layout() if p.id == "notes")
+        self.assertEqual((entry.width, entry.height, entry.scale), (250, 180, 1))
+        layout.save_placement("notes", width=None, height=None)
+        self.assertIsNone(next(p for p in layout.load_layout() if p.id == "notes").width)
 
     def test_bad_layouts_reject_duplicate_ids_scales_and_unsafe_names(self):
-        for entries in ([{"id": "x", "component": "Clock", "scale": 0}],
+        for entries in ([{"id": "x", "component": "Clock", "width": -1}],
+                        [{"id": "x", "component": "Clock", "height": True}],
+                        [{"id": "x", "component": "Clock", "width": 20001}],
+                        [{"id": "x", "component": "Clock", "height": 12.5}],
+                        [{"id": "x", "component": "Clock", "scale": 0}],
                         [{"id": "x", "component": "Clock", "scale": float("nan")}],
                         [{"id": "../x", "component": "Clock"}],
                         [{"id": "x", "component": "Clock", "anchor": "wrong"}],

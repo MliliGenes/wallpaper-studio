@@ -23,6 +23,8 @@ HOOKS = os.path.join(CONFIG_DIR, "hooks")
 LOCK = os.path.join(CONFIG_DIR, ".lock")
 HELPER_LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio.lock")
 AWAKE = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-awake.json")
+LOCK_REQUEST = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-lock.json")
+LOCKSCREEN_LOCK = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "wallpaper-studio-lockscreen.lock")
 BUILT_IN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "wallpapers")
 
 

@@ -1,21 +1,31 @@
 /* Wallpaper-tinted glass. Relative units preserve the effect when cards scale. */
-window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
+window#ws-desktop-widgets,
+window#ws-desktop-widgets decoration {
   background: transparent;
   box-shadow: none;
   border: none;
 }
-#desktop-layout { background: transparent; }
+#desktop-layout {
+  background: transparent;
+}
 #ws-desktop-widgets .desktop-widget {
-  background-color: alpha(@ws_sheet, 0.64);
-  background-image: linear-gradient(135deg,
-    alpha(@ws_accent, 0.18), alpha(@ws_paper, 0.10) 48%, alpha(@ws_accent, 0.07));
+  background-color: alpha(@ws_sheet, 0.8);
+  background-image: linear-gradient(
+    135deg,
+    alpha(@ws_accent, 0.18),
+    alpha(@ws_paper, 0.1) 48%,
+    alpha(@ws_accent, 0.07)
+  );
   color: @ws_ink;
   border: 1px solid alpha(@ws_accent, 0.28);
-  border-radius: 1.65em;
+  border-radius: 0.8em;
   padding: 1.25em;
   min-width: 13em;
-  box-shadow: 0 0.6em 1.8em alpha(@ws_shadow, 0.28),
-    inset 0 1px 0 alpha(@ws_ink, 0.20), inset 0 -1px 0 alpha(@ws_accent, 0.10);
+  /* Keep highlights inside the rounded card; an outer shadow bleeds through
+     the transparent desktop window when Gaussian glass is active. */
+  box-shadow:
+    inset 0 1px 0 alpha(@ws_ink, 0.2),
+    inset 0 -1px 0 alpha(@ws_accent, 0.1);
 }
 #ws-desktop-widgets.glass-ready .desktop-widget {
   background-color: alpha(@ws_sheet, 0.38);
@@ -56,19 +66,27 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
 }
 #ws-desktop-widgets .calendar-cell,
 #ws-desktop-widgets .calendar-weekday {
-  min-width: 1.5em;
-  min-height: 1.5em;
+  min-width: 1.8em;
+  min-height: 1.8em;
   font-size: 0.8em;
 }
-#ws-desktop-widgets .calendar-weekday { color: @ws_muted; }
+#ws-desktop-widgets .calendar-weekday {
+  color: @ws_muted;
+}
 #ws-desktop-widgets .calendar-cell.today {
   background-color: @ws_accent;
-  background-image: linear-gradient(to bottom, shade(@ws_accent, 1.12), @ws_accent);
+  background-image: linear-gradient(
+    to bottom,
+    shade(@ws_accent, 1.12),
+    @ws_accent
+  );
   color: @ws_on_accent;
-  border-radius: 0.75em;
-  box-shadow: 0 0.1em 0.5em alpha(@ws_accent, 0.30);
+  border-radius: 0.5em;
+  box-shadow: 0 0.1em 0.5em alpha(@ws_accent, 0.3);
 }
-#ws-desktop-widgets .metric-value { font-weight: 600; }
+#ws-desktop-widgets .metric-value {
+  font-weight: 600;
+}
 #ws-desktop-widgets .system-card progressbar trough {
   min-height: 0.3em;
   border-radius: 0.3em;
@@ -80,11 +98,17 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
   min-height: 0.3em;
   border-radius: 0.3em;
   background-color: @ws_accent;
-  background-image: linear-gradient(to right, @ws_accent, shade(@ws_accent, 1.18));
+  background-image: linear-gradient(
+    to right,
+    @ws_accent,
+    shade(@ws_accent, 1.18)
+  );
   border: none;
-  box-shadow: 0 0 0.6em alpha(@ws_accent, 0.20);
+  box-shadow: 0 0 0.6em alpha(@ws_accent, 0.2);
 }
-#ws-desktop-widgets .notes-text { font-size: 1em; }
+#ws-desktop-widgets .notes-text {
+  font-size: 1em;
+}
 #ws-desktop-widgets .resize-grip {
   color: @ws_accent;
   font-size: 1em;
@@ -92,7 +116,9 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
 }
 
 /* Logtime: the reference's open ring and large hours, in the desktop palette. */
-#ws-desktop-widgets .logtime-card { min-width: 19em; }
+#ws-desktop-widgets .logtime-card {
+  min-width: 19em;
+}
 #ws-desktop-widgets .logtime-login {
   background-color: alpha(@ws_accent, 0.18);
   color: @ws_accent_text;
@@ -107,12 +133,30 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
   min-height: 16em;
   color: @ws_accent;
 }
-#ws-desktop-widgets .logtime-percent { color: @ws_accent_text; font-size: 1em; font-weight: bold; }
-#ws-desktop-widgets .logtime-hours { color: @ws_ink; font-size: 4.5em; font-weight: 500; }
-#ws-desktop-widgets .logtime-unit { color: @ws_accent_text; font-size: 1.1em; }
-#ws-desktop-widgets .logtime-period { color: @ws_ink; font-size: 0.8em; }
-#ws-desktop-widgets .logtime-status { color: @ws_muted; font-size: 0.8em; }
-#ws-desktop-widgets .logtime-card button, #ws-desktop-widgets .media-card button {
+#ws-desktop-widgets .logtime-percent {
+  color: @ws_accent_text;
+  font-size: 1em;
+  font-weight: bold;
+}
+#ws-desktop-widgets .logtime-hours {
+  color: @ws_ink;
+  font-size: 4.5em;
+  font-weight: 500;
+}
+#ws-desktop-widgets .logtime-unit {
+  color: @ws_accent_text;
+  font-size: 1.1em;
+}
+#ws-desktop-widgets .logtime-period {
+  color: @ws_ink;
+  font-size: 0.8em;
+}
+#ws-desktop-widgets .logtime-status {
+  color: @ws_muted;
+  font-size: 0.8em;
+}
+#ws-desktop-widgets .logtime-card button,
+#ws-desktop-widgets .media-card button {
   background-color: alpha(@ws_accent, 0.12);
   background-image: none;
   color: @ws_ink;
@@ -123,18 +167,49 @@ window#ws-desktop-widgets, window#ws-desktop-widgets decoration {
   box-shadow: inset 0 1px 0 alpha(@ws_ink, 0.08);
   text-shadow: none;
 }
-#ws-desktop-widgets .logtime-card button:hover, #ws-desktop-widgets .media-card button:hover { background-color: alpha(@ws_accent, 0.28); }
-#ws-desktop-widgets .logtime-card button:active, #ws-desktop-widgets .media-card button:active { background-color: alpha(@ws_accent, 0.42); }
-#ws-desktop-widgets .logtime-card button:disabled, #ws-desktop-widgets .media-card button:disabled { color: @ws_muted; }
+#ws-desktop-widgets .logtime-card button:hover,
+#ws-desktop-widgets .media-card button:hover {
+  background-color: alpha(@ws_accent, 0.28);
+}
+#ws-desktop-widgets .logtime-card button:active,
+#ws-desktop-widgets .media-card button:active {
+  background-color: alpha(@ws_accent, 0.42);
+}
+#ws-desktop-widgets .logtime-card button:disabled,
+#ws-desktop-widgets .media-card button:disabled {
+  color: @ws_muted;
+}
 
-#ws-desktop-widgets .media-card { min-width: 19em; }
-#ws-desktop-widgets .media-title { font-size: 1.35em; font-weight: bold; }
-#ws-desktop-widgets .media-detail { color: @ws_muted; font-size: 0.85em; }
+#ws-desktop-widgets .media-card {
+  min-width: 19em;
+}
+#ws-desktop-widgets .media-title {
+  font-size: 1.35em;
+  font-weight: bold;
+}
+#ws-desktop-widgets .media-detail {
+  color: @ws_muted;
+  font-size: 0.85em;
+}
 
 /* Artwork and compact, accessible transport controls. */
-#ws-desktop-widgets .widget-image { min-width: 10em; min-height: 10em; }
+#ws-desktop-widgets .widget-image {
+  min-width: 10em;
+  min-height: 10em;
+}
+#ws-desktop-widgets .media-artwork {
+  min-width: 18em;
+  min-height: 18em;
+  /* object-fit: cover; */
+}
 #ws-desktop-widgets .media-card button.media-control {
   font-size: 1.3em;
   padding: 0.3em 0.65em;
   min-width: 1.5em;
+}
+
+/* Monochrome SVG icons inherit colour and scale from their widget/button. */
+#ws-desktop-widgets .widget-icon {
+  min-width: 1.1em;
+  min-height: 1.1em;
 }

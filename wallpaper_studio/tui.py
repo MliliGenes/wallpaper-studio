@@ -149,7 +149,7 @@ class Panel:
             return rows
         keys = {
             1: ("mode", "glass", "terminal", "lock_screen", "light_from", "dark_from"),
-            2: ("clock", "clock_format", "clock_date_format", "clock_top", "widgets_enabled", "layout_edit", "layout_grid", "layout_grid_size", "layout_grid_gap", "widget_blur", "widget_blur_radius", "logtime_username", "logtime_goal"),
+            2: ("clock", "clock_format", "clock_date_format", "clock_top", "widgets_enabled", "layout_edit", "layout_grid", "layout_grid_size", "layout_grid_gap", "widget_blur", "widget_blur_radius", "lock_password", "logtime_username", "logtime_goal"),
             3: ("awake_method", "awake_interval"),
         }
         if self.page in keys:
@@ -162,7 +162,7 @@ class Panel:
                                    "Toggle this clock independently", command=("layout", "toggle", clock.id))
                 rows.extend(Item(layout.widget_title(placement),
                                  "On" if layout.widget_enabled(placement, self.config) else "Off",
-                                 f"Toggle this widget independently · {placement.anchor} · {placement.scale:g}×",
+                                 f"Toggle this widget independently · {layout.widget_geometry(placement)}",
                                  command=("layout", "toggle", placement.id)) for placement in placements if placement is not clock)
                 rows.append(Item("Edit widget CSS", detail=storage.WIDGETS_CSS, action="widgets_css"))
                 rows.append(Item("Edit desktop layout", detail=storage.LAYOUT, action="layout"))

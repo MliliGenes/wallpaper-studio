@@ -14,7 +14,7 @@ def main():
         os.environ["XDG_CONFIG_HOME"] = directory
         os.environ["XDG_CACHE_HOME"] = directory
         from wallpaper_studio.widget_runtime import DesktopWidgets
-        from wallpaper_studio.components import Column, Image, Progress, Text, component
+        from wallpaper_studio.components import Button, Column, Icon, IconButton, Image, Progress, Text, component
         from wallpaper_studio.gtk_renderer import Renderer
         from wallpaper_studio.widgets import Clock
         from gi.repository import Gdk, Gtk, GLib
@@ -87,7 +87,7 @@ def main():
             media = host.frames["now-playing"]
             assert media.renderer.find("title").get_text()
             assert len(media.renderer.buttons()) == 3
-            assert media.renderer.find("Previous").get_child().get_text() == "<<"
+            assert media.renderer.find("Previous").get_child().icon_name == "backward-step"
             assert media.renderer.find("Previous").get_tooltip_text() == "Previous"
             assert media.renderer.find("artwork").get_allocated_width() > 20
             media_model = media.models["now-playing"]
@@ -239,11 +239,11 @@ def main():
             corner = SimpleNamespace(button=1, x_root=host.area[0] + x + width - 2, y_root=host.area[1] + y + height - 2)
             assert host.begin_drag("clock", corner) and host.drag["resize"]
             host.drag_motion(SimpleNamespace(x_root=corner.x_root + width * .25, y_root=corner.y_root + height * .25))
-            settle()  # CSS sizing is applied on GTK's next frame, while the gesture is still held.
+            settle()  # The chosen rectangle must remain stable while the pointer is held.
             assert frame.container.get_allocated_width() > width, "Resize must be visible before release"
             host.end_drag(SimpleNamespace(button=1))
             settle()
-            assert host.frames["clock"].placement.scale > 1
+            assert host.frames["clock"].placement.scale == 1, "Border resize must not change text scale"
             assert host.frames["clock"].container.get_preferred_size()[1].width > width
             scale = host.frames["clock"].placement.scale
             assert host.scroll_scale("clock", SimpleNamespace(direction=Gdk.ScrollDirection.UP))
@@ -276,10 +276,12 @@ def main():
             settle()
             assert_grid()
             previous_width = frame.container.get_allocated_width()
+            previous_scale = frame.placement.scale
             host.scroll_scale("clock", SimpleNamespace(direction=Gdk.ScrollDirection.DOWN))
             settle()
             assert_grid()
-            assert frame.container.get_allocated_width() < previous_width, ("Scroll down must shrink by a grid span", previous_width, frame.container.get_allocated_width(), frame.placement.scale, frame.renderer.root.widget.get_preferred_size()[1].width)
+            assert frame.container.get_allocated_width() == previous_width, "Text scaling preserves explicit width"
+            assert frame.placement.scale < previous_scale
             host.reload()
             settle()
             assert_grid()
@@ -337,15 +339,98 @@ def main():
         artwork_renderer.render(Image(None, key="cover"))
         artwork_renderer.close()
 
+        # All bundled SVGs decode locally; controls retain their native child on icon changes.
+        from wallpaper_studio.gtk_icons import SvgIcon, raster_icon
+        from wallpaper_studio.icons import available_icons
+        for name in available_icons():
+            pb = raster_icon(name, 32)
+            assert max(pb.get_width(), pb.get_height()) == 32
+            assert pb.get_has_alpha()
+        icons = Renderer()
+        button = icons.render(IconButton("play", label="Play", on_click=lambda: None, key="control"))
+        child = button.get_child()
+        assert isinstance(child, SvgIcon)
+        assert button.get_accessible().get_name() == "Play"
+        icons.render(IconButton("pause", label="Pause", on_click=lambda: None, sensitive=False, key="control"))
+        assert button.get_child() is child and child.icon_name == "pause"
+        assert button.get_tooltip_text() == "Pause"
+        assert child.get_state_flags() & Gtk.StateFlags.INSENSITIVE
+        icons.render(Button("Resume", on_click=lambda: None, key="control"))
+        assert button.get_child().get_text() == "Resume"
+        standalone = icons.render(Icon("music", label="Music", key="music"))
+        assert standalone.get_accessible().get_name() == "Music"
+        # Exercise the drawing path at display scale, including CSS tinting.
+        allocation = Gdk.Rectangle()
+        allocation.x = allocation.y = 0
+        allocation.width = allocation.height = 32
+        standalone.size_allocate(allocation)
+        icon_surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 32, 32)
+        standalone.draw_icon(standalone, cairo.Context(icon_surface))
+        assert any(icon_surface.get_data())
+        icons.close()
+
         # User widgets load from the config folder without app/core registration.
         Path(storage.CUSTOM_WIDGETS, "greeting.py").write_text(
-            'from wallpaper_studio.components import Text, component\n@component\ndef Widget(config, name="world"):\n    return Text("Hello " + name, key="custom")\n')
+            'from wallpaper_studio.components import Text, component\n@component\ndef Widget(config, name="world"):\n    return Text("Hello " + name, wrap=True, max_width_chars=80, key="custom")\n')
         Path(storage.LAYOUT).write_text(json.dumps({"version": 1, "widgets": [
             {"id": "greeting", "component": "greeting", "anchor": "bottom-left", "props": {"name": "sel-mlil"}}]}))
         custom = DesktopWidgets(lambda: False)
         try:
             assert custom.window.get_visible()
             assert custom.frames["greeting"].renderer.find("custom").get_text() == "Hello sel-mlil"
+            host = custom  # Reuse the settle helper with this isolated test layout.
+            core.save_config(layout_edit=True, layout_grid=True, layout_grid_size=32, layout_grid_gap=8)
+            for edge in ("n", "s", "w", "e", "nw", "ne", "sw", "se"):
+                layout.save_placement("greeting", anchor="top-left", x=168, y=168, width=312, height=192)
+                custom.reload()
+                settle()
+                frame = custom.frames["greeting"]
+                x, y = custom.canvas.child_get(frame.container, "x", "y")
+                w, h = frame.container.get_allocated_width(), frame.container.get_allocated_height()
+                assert (x, y, w, h) == (168, 168, 312, 192)
+                px = 2 if "w" in edge else w - 2 if "e" in edge else w / 2
+                py = 2 if "n" in edge else h - 2 if "s" in edge else h / 2
+                start = SimpleNamespace(button=1, x_root=custom.area[0] + x + px, y_root=custom.area[1] + y + py)
+                assert custom.begin_drag("greeting", start)
+                assert custom.drag["resize"] == edge
+                dx = -40 if "w" in edge else 40 if "e" in edge else 0
+                dy = -40 if "n" in edge else 40 if "s" in edge else 0
+                custom.drag_motion(SimpleNamespace(x_root=start.x_root + dx, y_root=start.y_root + dy))
+                expected = (x + min(0, dx), y + min(0, dy), w + abs(dx), h + abs(dy))
+                custom.update()
+                settle()
+                allocation = frame.container.get_allocation()
+                assert (allocation.x, allocation.y, allocation.width, allocation.height) == expected
+                custom.end_drag(SimpleNamespace(button=1))
+                custom.reload()
+                settle()
+                assert (frame.placement.x, frame.placement.y, frame.placement.width, frame.placement.height) == expected
+                assert frame.placement.scale == 1
+            # Cancellation restores the saved rectangle, including width and height.
+            x, y = custom.canvas.child_get(frame.container, "x", "y")
+            w, h = frame.container.get_allocated_width(), frame.container.get_allocated_height()
+            before = Path(storage.LAYOUT).read_text()
+            start = SimpleNamespace(button=1, x_root=custom.area[0] + x + w - 2,
+                                    y_root=custom.area[1] + y + h / 2)
+            custom.begin_drag("greeting", start)
+            custom.drag_motion(SimpleNamespace(x_root=start.x_root - 80, y_root=start.y_root))
+            custom.cancel_drag("greeting")
+            settle()
+            assert (frame.container.get_allocated_width(), frame.container.get_allocated_height()) == (w, h)
+            assert Path(storage.LAYOUT).read_text() == before
+            # Narrow wrapping text without changing text scale, and measure its new height.
+            layout.save_placement("greeting", width=472, height=None, props={"name": "wrapping words " * 35})
+            custom.reload()
+            settle()
+            wide_height = frame.container.get_allocated_height()
+            layout.save_placement("greeting", width=232, height=None)
+            custom.reload()
+            settle()
+            assert frame.container.get_allocated_width() == 232
+            assert frame.container.get_allocated_height() > wide_height
+            label = frame.renderer.find("custom")
+            assert label.get_allocated_height() >= label.get_preferred_height_for_width(label.get_allocated_width())[0]
+            assert frame.placement.scale == 1
             Path(storage.LAYOUT).write_text('{"version":1,"widgets":[]}')
             custom.reload()
             assert not custom.window.get_visible()
