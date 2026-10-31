@@ -51,6 +51,8 @@ class CleanerTests(unittest.TestCase):
                 self.assertIn('Skipped', run_cleaner(True, home=home))
             self.assertTrue((cache / 'keep').exists())
 
+    @unittest.skipUnless((Path(__file__).parents[1] / 'tools/migrate-home-storage.py').exists(),
+                         'tools/migrate-home-storage.py is not in the repository (only the .sh version is)')
     def test_migration_checksums_and_idempotence(self):
         spec = importlib.util.spec_from_file_location('migration', Path(__file__).parents[1] / 'tools/migrate-home-storage.py')
         module = importlib.util.module_from_spec(spec)

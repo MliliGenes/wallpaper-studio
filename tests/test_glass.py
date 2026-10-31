@@ -3,9 +3,14 @@ import tempfile
 import sys
 import unittest
 
-import cairo
-
-from wallpaper_studio.glass import WallpaperGlass, gaussian_blur, gaussian_kernel
+try:
+    import cairo
+    from wallpaper_studio.glass import WallpaperGlass, gaussian_blur, gaussian_kernel
+except ModuleNotFoundError as error:
+    # Skip only when the system bindings are absent; any other import error should still fail.
+    if error.name not in ("cairo", "gi"):
+        raise
+    raise unittest.SkipTest(f"{error.name} is not installed")
 
 
 class WallpaperGlassTests(unittest.TestCase):
