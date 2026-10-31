@@ -15,7 +15,7 @@ import unittest
 from unittest.mock import patch
 
 from wallpaper_studio import media, storage
-from wallpaper_studio.tui import CommandJob, awake_status
+from wallpaper_studio.tui import CommandJob, awake_status, display_value
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,6 +35,23 @@ class TerminalBackendTests(unittest.TestCase):
         self.assertTrue(any(row.setting == "layout_edit" for row in rows))
         for key in ("layout_grid", "layout_grid_size", "layout_grid_gap"):
             self.assertTrue(any(row.setting == key for row in rows))
+
+    def test_every_described_setting_has_a_panel_label(self):
+        # Panel.preference() indexes LABELS and DESCRIPTIONS by key; a missing label crashes the TUI.
+        from wallpaper_studio import settings
+        from wallpaper_studio.tui import LABELS
+        self.assertEqual(set(settings.DESCRIPTIONS) - set(LABELS), set())
+
+    def test_secret_settings_are_never_displayed(self):
+        self.assertEqual(display_value("lock_password", "hunter2"), "(set)")
+        self.assertEqual(display_value("lock_password", ""), "(not set)")
+        self.assertNotIn("hunter2", display_value("lock_password", "hunter2"))
+
+    def test_ordinary_settings_display_as_before(self):
+        self.assertEqual(display_value("clock", True), "On")
+        self.assertEqual(display_value("clock", False), "Off")
+        self.assertEqual(display_value("clock_format", "%H:%M"), "%H:%M")
+        self.assertEqual(display_value("clock_date_format", ""), "(hidden)")
 
     def test_expired_awake_requests_display_off(self):
         self.assertEqual(awake_status({}, now=100), "Off")

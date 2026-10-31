@@ -25,8 +25,18 @@ LABELS = {
     "layout_grid_gap": "Grid spacing (px)",
     "widget_blur": "Frosted widget glass", "widget_blur_radius": "Glass blur radius",
     "logtime_username": "Logtime username", "logtime_goal": "Logtime goal (hours)",
+    "lock_password": "Lock overlay password",
 }
 CHOICES = {"mode": ("light", "dark", "auto"), "awake_method": ("mouse", "inhibit")}
+SECRETS = frozenset({"lock_password"})
+
+
+def display_value(key, value):
+    """Text shown for a setting. Secrets are never echoed to a shared screen."""
+    if key in SECRETS:
+        return "(set)" if value else "(not set)"
+    display = ("On" if value else "Off") if isinstance(value, bool) else str(value)
+    return display or "(hidden)"
 
 
 @dataclass
@@ -126,11 +136,7 @@ class Panel:
         self.refresh_at = time.monotonic() + 1
 
     def preference(self, key):
-        value = self.config[key]
-        display = ("On" if value else "Off") if isinstance(value, bool) else str(value)
-        if display == "":
-            display = "(hidden)"
-        return Item(LABELS[key], display, settings.DESCRIPTIONS[key], setting=key)
+        return Item(LABELS[key], display_value(key, self.config[key]), settings.DESCRIPTIONS[key], setting=key)
 
     def items(self):
         if self.page == 0:
