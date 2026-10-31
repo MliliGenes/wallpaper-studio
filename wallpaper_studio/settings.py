@@ -42,7 +42,7 @@ DESCRIPTIONS = {
     "glass": "Transparent app windows",
     "terminal": "Recolour GNOME Terminal",
     "lock_screen": "Update the lock-screen picture",
-    "lock_password": "Password for Wallpaper Studio's optional lock overlay (empty disables it)",
+    "lock_password": "Password for the optional cover overlay; not a secure session lock (empty disables it)",
     "clock": "Show the desktop clock",
     "clock_format": "strftime time format",
     "clock_date_format": "strftime date format; empty hides the date",

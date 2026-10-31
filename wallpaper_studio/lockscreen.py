@@ -1,7 +1,11 @@
-"""A small, theme-aware lock overlay for kiosk and presentation use."""
-import hashlib
-import time
+"""A small, theme-aware cover overlay for kiosk and presentation use.
+
+This is an ordinary fullscreen window, not a session lock: it does not stop
+VT switching, killing the process, or other ways around it. Use the desktop's own
+lock (for example ``loginctl lock-session``) when real protection is needed.
+"""
 import fcntl
+import hmac
 
 import gi
 gi.require_version("Gdk", "3.0")
@@ -10,7 +14,6 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 
 from . import core
-from . import storage
 from . import storage
 
 
@@ -95,7 +98,7 @@ class LockScreen:
 
     def unlock(self, *_args):
         expected = core.load_config().get("lock_password", "")
-        if expected and self.entry.get_text() == expected:
+        if expected and hmac.compare_digest(self.entry.get_text().encode(), expected.encode()):
             self.window.hide()
             self.window.destroy()
             fcntl.flock(self.lock_file, fcntl.LOCK_UN)

@@ -263,7 +263,7 @@ class Window(Adw.ApplicationWindow):
         method.connect("notify::selected", lambda c, _p: self.save(awake_method="mouse" if c.get_selected() == 0 else "inhibit"))
         self.awake_method_combo = method
         screen.add(method)
-        password = Adw.ActionRow(title="Lock-screen password", subtitle="Leave empty to disable the themed lock overlay")
+        password = Adw.ActionRow(title="Lock-screen password", subtitle="Cover-only overlay, not a secure lock. Leave empty to disable")
         password_entry = Gtk.Entry(text=self.config["lock_password"], visibility=False, placeholder_text="Password",
                                    valign=Gtk.Align.CENTER, width_chars=18)
         password_entry.connect("activate", lambda entry: self.save(lock_password=entry.get_text()))
