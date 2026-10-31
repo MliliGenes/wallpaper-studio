@@ -3,7 +3,7 @@ from ..components import Column, Text, component
 
 
 @component
-def Notes(config, title="Notes", text="Your desktop, your way.\n\nTurn on Arrange widgets to move and resize these cards."):
+def Notes(config, title="Notes", text="To be is To do.\n\nDo something with your life, find passion, find love, get busy."):
     return Column(
         Text(title.upper(), class_name="widget-label", align="start"),
         Text(text, class_name="notes-text", align="start", wrap=True, max_width_chars=25),

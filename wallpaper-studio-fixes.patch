@@ -1,0 +1,265 @@
+From 923bb4dbc2fbd6a35a18e22ec6225b6a19c8d415 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 31 Oct 2026 06:42:15 +0000
+Subject: [PATCH 1/4] Fix TUI crash on Widgets page and stop echoing the lock
+ password
+
+tui.LABELS had no entry for lock_password, so opening the Widgets panel raised
+KeyError (this broke three TUI tests). Add the label.
+
+Panel.preference() also rendered every value with str(), so a configured lock
+password was drawn in clear text on a shared screen. Route display through a small
+display_value() helper that masks secrets as (set)/(not set).
+
+Add regression tests: every described setting must have a panel label, and
+secrets are never displayed.
+---
+ tests/test_tui.py       | 19 ++++++++++++++++++-
+ wallpaper_studio/tui.py | 16 +++++++++++-----
+ 2 files changed, 29 insertions(+), 6 deletions(-)
+
+diff --git a/tests/test_tui.py b/tests/test_tui.py
+index 00ade11..9a38bc4 100644
+--- a/tests/test_tui.py
++++ b/tests/test_tui.py
+@@ -15,7 +15,7 @@ import unittest
+ from unittest.mock import patch
+ 
+ from wallpaper_studio import media, storage
+-from wallpaper_studio.tui import CommandJob, awake_status
++from wallpaper_studio.tui import CommandJob, awake_status, display_value
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ 
+@@ -36,6 +36,23 @@ class TerminalBackendTests(unittest.TestCase):
+         for key in ("layout_grid", "layout_grid_size", "layout_grid_gap"):
+             self.assertTrue(any(row.setting == key for row in rows))
+ 
++    def test_every_described_setting_has_a_panel_label(self):
++        # Panel.preference() indexes LABELS and DESCRIPTIONS by key; a missing label crashes the TUI.
++        from wallpaper_studio import settings
++        from wallpaper_studio.tui import LABELS
++        self.assertEqual(set(settings.DESCRIPTIONS) - set(LABELS), set())
++
++    def test_secret_settings_are_never_displayed(self):
++        self.assertEqual(display_value("lock_password", "hunter2"), "(set)")
++        self.assertEqual(display_value("lock_password", ""), "(not set)")
++        self.assertNotIn("hunter2", display_value("lock_password", "hunter2"))
++
++    def test_ordinary_settings_display_as_before(self):
++        self.assertEqual(display_value("clock", True), "On")
++        self.assertEqual(display_value("clock", False), "Off")
++        self.assertEqual(display_value("clock_format", "%H:%M"), "%H:%M")
++        self.assertEqual(display_value("clock_date_format", ""), "(hidden)")
++
+     def test_expired_awake_requests_display_off(self):
+         self.assertEqual(awake_status({}, now=100), "Off")
+         self.assertEqual(awake_status({"until": 99}, now=100), "Off")
+diff --git a/wallpaper_studio/tui.py b/wallpaper_studio/tui.py
+index 474fcfe..9c00a33 100644
+--- a/wallpaper_studio/tui.py
++++ b/wallpaper_studio/tui.py
+@@ -25,8 +25,18 @@ LABELS = {
+     "layout_grid_gap": "Grid spacing (px)",
+     "widget_blur": "Frosted widget glass", "widget_blur_radius": "Glass blur radius",
+     "logtime_username": "Logtime username", "logtime_goal": "Logtime goal (hours)",
++    "lock_password": "Lock overlay password",
+ }
+ CHOICES = {"mode": ("light", "dark", "auto"), "awake_method": ("mouse", "inhibit")}
++SECRETS = frozenset({"lock_password"})
++
++
++def display_value(key, value):
++    """Text shown for a setting. Secrets are never echoed to a shared screen."""
++    if key in SECRETS:
++        return "(set)" if value else "(not set)"
++    display = ("On" if value else "Off") if isinstance(value, bool) else str(value)
++    return display or "(hidden)"
+ 
+ 
+ @dataclass
+@@ -126,11 +136,7 @@ class Panel:
+         self.refresh_at = time.monotonic() + 1
+ 
+     def preference(self, key):
+-        value = self.config[key]
+-        display = ("On" if value else "Off") if isinstance(value, bool) else str(value)
+-        if display == "":
+-            display = "(hidden)"
+-        return Item(LABELS[key], display, settings.DESCRIPTIONS[key], setting=key)
++        return Item(LABELS[key], display_value(key, self.config[key]), settings.DESCRIPTIONS[key], setting=key)
+ 
+     def items(self):
+         if self.page == 0:
+-- 
+2.43.0
+
+
+From fb031223e48301f3f1dcbb798c6256b3c8d53f77 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 31 Oct 2026 06:42:15 +0000
+Subject: [PATCH 2/4] Lock overlay: constant-time compare, drop dead imports,
+ say what it is
+
+- Compare the entered password with hmac.compare_digest (on bytes, so non-ASCII
+  passwords work) instead of ==.
+- Remove the duplicated 'from . import storage' and the unused hashlib/time imports.
+- The overlay is an ordinary fullscreen window, not a session lock. Say so in the
+  module docstring, the setting description and the GUI subtitle, and point to
+  loginctl lock-session for real protection.
+---
+ wallpaper_studio/app.py        |  2 +-
+ wallpaper_studio/lockscreen.py | 13 ++++++++-----
+ wallpaper_studio/settings.py   |  2 +-
+ 3 files changed, 10 insertions(+), 7 deletions(-)
+
+diff --git a/wallpaper_studio/app.py b/wallpaper_studio/app.py
+index 114ee8e..461d92f 100644
+--- a/wallpaper_studio/app.py
++++ b/wallpaper_studio/app.py
+@@ -263,7 +263,7 @@ class Window(Adw.ApplicationWindow):
+         method.connect("notify::selected", lambda c, _p: self.save(awake_method="mouse" if c.get_selected() == 0 else "inhibit"))
+         self.awake_method_combo = method
+         screen.add(method)
+-        password = Adw.ActionRow(title="Lock-screen password", subtitle="Leave empty to disable the themed lock overlay")
++        password = Adw.ActionRow(title="Lock-screen password", subtitle="Cover-only overlay, not a secure lock. Leave empty to disable")
+         password_entry = Gtk.Entry(text=self.config["lock_password"], visibility=False, placeholder_text="Password",
+                                    valign=Gtk.Align.CENTER, width_chars=18)
+         password_entry.connect("activate", lambda entry: self.save(lock_password=entry.get_text()))
+diff --git a/wallpaper_studio/lockscreen.py b/wallpaper_studio/lockscreen.py
+index 0e17da5..138506e 100644
+--- a/wallpaper_studio/lockscreen.py
++++ b/wallpaper_studio/lockscreen.py
+@@ -1,7 +1,11 @@
+-"""A small, theme-aware lock overlay for kiosk and presentation use."""
+-import hashlib
+-import time
++"""A small, theme-aware cover overlay for kiosk and presentation use.
++
++This is an ordinary fullscreen window, not a session lock: it does not stop
++VT switching, killing the process, or other ways around it. Use the desktop's own
++lock (for example ``loginctl lock-session``) when real protection is needed.
++"""
+ import fcntl
++import hmac
+ 
+ import gi
+ gi.require_version("Gdk", "3.0")
+@@ -11,7 +15,6 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
+ 
+ from . import core
+ from . import storage
+-from . import storage
+ 
+ 
+ class LockScreen:
+@@ -95,7 +98,7 @@ class LockScreen:
+ 
+     def unlock(self, *_args):
+         expected = core.load_config().get("lock_password", "")
+-        if expected and self.entry.get_text() == expected:
++        if expected and hmac.compare_digest(self.entry.get_text().encode(), expected.encode()):
+             self.window.hide()
+             self.window.destroy()
+             fcntl.flock(self.lock_file, fcntl.LOCK_UN)
+diff --git a/wallpaper_studio/settings.py b/wallpaper_studio/settings.py
+index 42ebd6d..7907e5f 100644
+--- a/wallpaper_studio/settings.py
++++ b/wallpaper_studio/settings.py
+@@ -42,7 +42,7 @@ DESCRIPTIONS = {
+     "glass": "Transparent app windows",
+     "terminal": "Recolour GNOME Terminal",
+     "lock_screen": "Update the lock-screen picture",
+-    "lock_password": "Password for Wallpaper Studio's optional lock overlay (empty disables it)",
++    "lock_password": "Password for the optional cover overlay; not a secure session lock (empty disables it)",
+     "clock": "Show the desktop clock",
+     "clock_format": "strftime time format",
+     "clock_date_format": "strftime date format; empty hides the date",
+-- 
+2.43.0
+
+
+From 80856c0aee93b3ff582095eca43c33142ee165c6 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 31 Oct 2026 06:42:15 +0000
+Subject: [PATCH 3/4] Tests: skip cleanly when bindings or the migration script
+ are absent
+
+- test_glass: skip the module when pycairo/PyGObject are not installed instead of
+  failing at import (any other import error still fails).
+- test_cleaner: skip the migration test while tools/migrate-home-storage.py does not
+  exist; the repo only ships migrate-home-storage.sh.
+---
+ tests/test_cleaner.py |  2 ++
+ tests/test_glass.py   | 11 ++++++++---
+ 2 files changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/tests/test_cleaner.py b/tests/test_cleaner.py
+index e031c55..bbaacd3 100644
+--- a/tests/test_cleaner.py
++++ b/tests/test_cleaner.py
+@@ -51,6 +51,8 @@ class CleanerTests(unittest.TestCase):
+                 self.assertIn('Skipped', run_cleaner(True, home=home))
+             self.assertTrue((cache / 'keep').exists())
+ 
++    @unittest.skipUnless((Path(__file__).parents[1] / 'tools/migrate-home-storage.py').exists(),
++                         'tools/migrate-home-storage.py is not in the repository (only the .sh version is)')
+     def test_migration_checksums_and_idempotence(self):
+         spec = importlib.util.spec_from_file_location('migration', Path(__file__).parents[1] / 'tools/migrate-home-storage.py')
+         module = importlib.util.module_from_spec(spec)
+diff --git a/tests/test_glass.py b/tests/test_glass.py
+index 4c6fe46..b3b7bf3 100644
+--- a/tests/test_glass.py
++++ b/tests/test_glass.py
+@@ -3,9 +3,14 @@ import tempfile
+ import sys
+ import unittest
+ 
+-import cairo
+-
+-from wallpaper_studio.glass import WallpaperGlass, gaussian_blur, gaussian_kernel
++try:
++    import cairo
++    from wallpaper_studio.glass import WallpaperGlass, gaussian_blur, gaussian_kernel
++except ModuleNotFoundError as error:
++    # Skip only when the system bindings are absent; any other import error should still fail.
++    if error.name not in ("cairo", "gi"):
++        raise
++    raise unittest.SkipTest(f"{error.name} is not installed")
+ 
+ 
+ class WallpaperGlassTests(unittest.TestCase):
+-- 
+2.43.0
+
+
+From 682db942d1bf4385bc149cadf1a4e120f048f1b2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 31 Oct 2026 06:42:38 +0000
+Subject: [PATCH 4/4] Ignore installer output (app/, cache/, themes/)
+
+paths.py stores bulk data under ~/goinfre/wallpaper-studio. When the repo is cloned
+to that same path, the installer writes app/ (a stale copy of the package with
+absolute home paths), cache/ and themes/ (downloaded adw-gtk3) into the working tree.
+Ignore them going forward. Already-tracked files need: git rm -r --cached app cache themes
+---
+ .gitignore | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/.gitignore b/.gitignore
+index 00f2d38..4a29093 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -1,3 +1,9 @@
+ __pycache__/
+ *.pyc
+ .venv/
++
++# Installer output. paths.py puts bulk data in ~/goinfre/wallpaper-studio, which
++# is also where a clone usually lives, so these land inside the working tree.
++/app/
++/cache/
++/themes/
+-- 
+2.43.0
+

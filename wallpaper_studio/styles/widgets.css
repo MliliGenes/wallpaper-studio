@@ -9,7 +9,7 @@ window#ws-desktop-widgets decoration {
   background: transparent;
 }
 #ws-desktop-widgets .desktop-widget {
-  background-color: alpha(@ws_sheet, 0.8);
+  background-color: alpha(@ws_sheet, 0.8based on this pulsing of mouse movement, i want a stand alone script that i can run independently );
   background-image: linear-gradient(
     135deg,
     alpha(@ws_accent, 0.18),
