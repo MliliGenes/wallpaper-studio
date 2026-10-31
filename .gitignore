@@ -1,3 +1,9 @@
 __pycache__/
 *.pyc
 .venv/
+
+# Installer output. paths.py puts bulk data in ~/goinfre/wallpaper-studio, which
+# is also where a clone usually lives, so these land inside the working tree.
+/app/
+/cache/
+/themes/
